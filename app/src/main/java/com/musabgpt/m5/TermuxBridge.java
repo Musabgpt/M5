@@ -140,6 +140,13 @@ public final class TermuxBridge {
         } catch (NumberFormatException error) { callback.failed("Malformed Termux output length"); return; }
         if (err != Activity.RESULT_OK || exit != 0) {
             String reason = result.getString("errmsg", "");
+            if (reason.isEmpty() && !stdout.trim().isEmpty()) {
+                try {
+                    JSONObject toolFailure = new JSONObject(stdout.trim());
+                    if (!toolFailure.optBoolean("ok", true))
+                        reason = toolFailure.optString("error", "");
+                } catch (Exception ignored) { /* keep Termux error text */ }
+            }
             if (reason.isEmpty()) reason = stderr;
             if (reason.isEmpty()) reason = "Termux failed (exit=" + exit + ", err=" + err + ")";
             callback.failed(reason.length() > 500 ? reason.substring(0, 500) : reason);
