@@ -469,12 +469,15 @@ public final class M5Activity extends Activity {
         lastSavedContent=diskContent;
         try{
             DraftVault.Draft draft=draftVault.get(path);
-            if(draft==null||draft.contents.equals(diskContent)){
+            DraftRecoveryPolicy.Decision recovery=DraftRecoveryPolicy.evaluate(
+                draft==null?null:draft.contents,draft==null?null:draft.savedHash,diskContent,hash);
+            if(recovery==DraftRecoveryPolicy.Decision.NO_DRAFT||
+                recovery==DraftRecoveryPolicy.Decision.DISCARD_REDUNDANT){
                 unsavedDrafts.remove(path);
                 if(draft!=null)draftVault.remove(path);
                 showPanel("files");return;
             }
-            if(!draft.savedHash.equals(hash)){
+            if(recovery==DraftRecoveryPolicy.Decision.CONFLICT){
                 new AlertDialog.Builder(this)
                     .setTitle("File changed since draft was saved")
                     .setMessage("This draft is based on another version of the file. Choose which version to edit. Restoring the draft will NOT save it to the project automatically.")
