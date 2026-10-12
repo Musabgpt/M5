@@ -74,7 +74,7 @@ test('agent waits for per-tool approval and verifies successful shell check', as
     const answers = [
       { content: '{"tool_calls":[{"name":"read_file","arguments":{"path":"hello.txt"}}]}' },
       { content: JSON.stringify({tool_calls:[{name:'replace_text',arguments:{path:'hello.txt',oldText:'hello',newText:'world',expectedHash:hash}}]}) },
-      { content: '{"tool_calls":[{"name":"run_command","arguments":{"command":"cat hello.txt"}}]}' },
+      { content: '{"tool_calls":[{"name":"run_command","arguments":{"command":"grep -q world hello.txt"}}]}' },
       { content: '{"tool_calls":[{"name":"finish","arguments":{"summary":"Updated hello.txt and checked shell output"}}]}' }
     ];
     const manager = new AgentManager({ workspace:root, complete:async () => answers.shift(), maxSteps:5 });
