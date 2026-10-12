@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { AgentManager } from './agent.mjs';
 import { CheckpointStore } from './checkpoints.mjs';
 import { IDEManager } from './ide.mjs';
+import { ContextIndex } from './context.mjs';
 import { ROUTES } from './providers.mjs';
 import { workspacePath, safeCompare } from './security.mjs';
 import { enumerate, invokeTool } from './tools.mjs';
@@ -22,7 +23,8 @@ if (!fs.existsSync(tokenFile)) await fsp.writeFile(tokenFile, crypto.randomBytes
 const TOKEN = (await fsp.readFile(tokenFile, 'utf8')).trim();
 if (TOKEN.length < 48) throw new Error('Insecure server token');
 const checkpoints = new CheckpointStore({ workspace, state });
-const agent = new AgentManager({ workspace, checkpoints });
+const contextIndex = new ContextIndex(workspace);
+const agent = new AgentManager({ workspace, checkpoints, contextIndex });
 const ide = new IDEManager({ workspace, state });
 const webRoot = path.resolve('web');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -112,6 +114,7 @@ export const server = http.createServer(async (req, res) => {
       const input = await body(req);
       return json(res, 200, await checkpoints.restore(ensureString(input.id, 100), ensureString(input.expectedCurrentHash, 100)));
     }
+    if (url.pathname === '/api/context' && req.method === 'GET') return json(res, 200, await contextIndex.query(ensureString(url.searchParams.get('q'), 400)));
     if (url.pathname === '/api/git/status' && req.method === 'GET') return json(res, 200, await invokeTool(workspace, 'git_status', {}));
     if (url.pathname === '/api/git/diff' && req.method === 'GET') return json(res, 200, await invokeTool(workspace, 'git_diff', {}));
     if (url.pathname === '/api/terminal' && req.method === 'POST') {
