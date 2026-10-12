@@ -107,3 +107,15 @@ test('denied tool cannot write files', async () => {
     await assert.rejects(fs.readFile(path.join(root, 'bad.txt')));
   } finally { await cleanup(root); }
 });
+
+test('action request answered without tool execution remains blocked', async () => {
+  const root = await tmp();
+  try {
+    const agent = new AgentManager({ workspace:root, complete:async () => ({ content:'Done, fixed everything.' }) });
+    const j = agent.start('Fix the project and create code');
+    for(let i=0;i<60 && agent.snapshot(j.id).status==='running';i++) await new Promise(r=>setTimeout(r,5));
+    const state = agent.snapshot(j.id);
+    assert.equal(state.status, 'blocked');
+    assert.ok(state.events.some(e => e.type === 'warning'));
+  } finally { await cleanup(root); }
+});
