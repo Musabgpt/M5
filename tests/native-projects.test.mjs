@@ -64,6 +64,6 @@ test('APK copy of native bridge matches source after every edit',async()=>{
 test('NativeAgent dispatches phone actions before enforcing workspace tool whitelist',async()=>{
   const file=await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/NativeAgent.java',import.meta.url),'utf8');
   const phone=file.indexOf('if(name.startsWith("phone_")){');
-  const workspace=file.indexOf('if(!name.matches("list_files|read_file|search_code');
+  const workspace=file.indexOf('if(!name.matches("exec_command|read_output|terminate_process|list_files|read_file|search_code');
   assert.ok(phone>0 && workspace>phone,'phone tools must not be rejected by workspace-only whitelist');
 });
