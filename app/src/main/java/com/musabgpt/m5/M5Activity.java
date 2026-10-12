@@ -399,7 +399,7 @@ public final class M5Activity extends Activity {
                     boolean folder="directory".equals(file.optString("type"));
                     TextView row=label((folder?"▸  ":"📄  ")+path,14,folder?ACCENT:Color.WHITE);
                     if(!folder)row.setOnClickListener(v->openFile(path));
-                    else row.setOnClickListener(v->exportProjectDialog(path));
+                    else row.setOnClickListener(v->folderActions(path));
                     rows.addView(row);
                 }
                 if(files==null||files.length()==0)rows.addView(label("Workspace is empty. Create a new file.",14,MUTED));
@@ -433,6 +433,62 @@ public final class M5Activity extends Activity {
             }
             @Override public void failed(String error){showError("Project audit failed",error);}
         });
+    }
+
+    private void folderActions(String path){
+        final String[] actions={
+            "Audit project syntax",
+            "Export source ZIP",
+            "Git status",
+            "Git diff (tracked files)",
+            "Initialize local Git repository"
+        };
+        new AlertDialog.Builder(this)
+            .setTitle("Project · "+path)
+            .setItems(actions,(dialog,which)->{
+                switch(which){
+                    case 0:auditProject(path);break;
+                    case 1:exportProjectDialog(path);break;
+                    case 2:inspectProjectGit(path,false);break;
+                    case 3:inspectProjectGit(path,true);break;
+                    case 4:requestGitInit(path);break;
+                }
+            }).setNegativeButton("Cancel",null).show();
+    }
+    private void inspectProjectGit(String project,boolean diff){
+        final String verb=diff?"git_project_diff":"git_project_status";
+        termux.tool(verb,new String[]{project},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject observed){
+                if(!observed.optBoolean("success",false)){
+                    showError("Git operation failed",observed.optString("stderr","Git command failed. Is this directory a Git repository?"));
+                    return;
+                }
+                String output=observed.optString("stdout","");
+                if(output.isEmpty())output=diff?"No tracked, unstaged changes. Untracked files do not appear in Git diff.":"No changes reported by Git.";
+                if(observed.optBoolean("truncated"))output+="\n\n[Output truncated: open Git locally for the complete diff]";
+                if(output.length()>6000)output=output.substring(0,6000)+"\n[Preview limited]";
+                new AlertDialog.Builder(M5Activity.this)
+                    .setTitle((diff?"Git diff":"Git status")+" · "+project)
+                    .setMessage(output)
+                    .setPositiveButton("OK",null).show();
+            }
+            @Override public void failed(String error){showError("Git unavailable",error);}
+        });
+    }
+    private void requestGitInit(String project){
+        new AlertDialog.Builder(this)
+            .setTitle("Initialize Git in "+project+"?")
+            .setMessage("Creates a local .git directory and a protective .gitignore if one doesn't exist. Nothing is committed or pushed. Git must be installed in Termux.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Initialize locally",(d,w)->
+                termux.tool("git_project_init",new String[]{project},new TermuxBridge.Callback(){
+                    @Override public void finished(JSONObject result){
+                        showError("Local Git initialized",
+                            "Created Git repository in "+project+
+                            ". No files were committed, and nothing was uploaded to GitHub.");
+                    }
+                    @Override public void failed(String error){showError("Git initialization failed",error);}
+                })).show();
     }
 
     private void exportProjectDialog(String relative){
