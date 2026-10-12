@@ -23,6 +23,8 @@ public final class NativeAgent {
     private final FreeModels models;
     private final Screen ui;
     private final JSONArray messages=new JSONArray();
+    private final ArrayList<JSONObject> conversation=new ArrayList<>();
+    private String latestUserMessage="";
     private int family=0,steps=0,writes=0,validations=0,phoneActions=0;
     private String mode="plan";
     private boolean stopped=false,active=false,requiresAction=false,requiresWrite=false;
@@ -58,6 +60,7 @@ public final class NativeAgent {
         taskGeneration++;
         active=true;stopped=false;steps=0;writes=0;validations=0;phoneActions=0;consentedScreenRead=false;
         family=selectedFamily;mode=requestedMode;
+        latestUserMessage=goal;
         requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|open|launch|click|tap|scroll|send|message|browse|search|navigate|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل|افتح|اضغط|شغل|مرر|ارسل|ابعث|ادخل|تصفح|اكتب|كود|برنامج|ملف|مشروع|تطبيق|حاسبة).*");
         requiresWrite=goal.matches("(?is).*(create|build|write|implement|generate|fix|modify|edit|انشئ|أنشئ|اكتب|ابن|طور|صلح|اصلح|عدّل|عدل|كود|برنامج|ملف|مشروع|حاسبة).*");
         // Explicit, simple app-launch requests are handled by Android, not an unreliable model.
@@ -100,6 +103,9 @@ public final class NativeAgent {
         }
         while(messages.length()>0)messages.remove(0);
         messages.put(message("system",SYSTEM));
+        // Previous plain conversation stays in volatile memory, not in shared storage.
+        // Never retain or replay tool outputs, screen data, or workspace file contents.
+        for(JSONObject entry:conversation)messages.put(entry);
         messages.put(message("user",goal+
           ("\u0070lan".equals(mode)?"\nPLAN MODE: strictly read-only, do not run commands or edit files.":
           "\nAGENT MODE: inspect, edit with approval, validate with a real test.")));
@@ -108,6 +114,17 @@ public final class NativeAgent {
     }
     private boolean phoneRequest(String goal) {
         return goal.matches("(?is).*(واتس|whatsapp|يوتيوب|youtube|تليجرام|telegram|كروم|chrome|التطبيق|الشاشة|الشاشه|الهاتف|phone|app|click|tap|scroll|افتح|اضغط).*");
+    }
+    void clearConversation(){
+        if(active)stop();
+        conversation.clear();
+        latestUserMessage="";
+    }
+    private void rememberConversation(String user,String answer){
+        if(user==null||answer==null)return;
+        conversation.add(message("user",user.substring(0,Math.min(1600,user.length()))));
+        conversation.add(message("assistant",answer.substring(0,Math.min(3000,answer.length()))));
+        while(conversation.size()>12)conversation.remove(0);
     }
     void stop(){taskGeneration++;stopped=true;active=false;ui.finished("Stopped by user.");}
     private JSONObject message(String role,String content){
@@ -144,6 +161,9 @@ public final class NativeAgent {
         }
         JSONObject call=parsed.call;
         if(call==null) {
+            if(!requiresAction && text.length()<5000 && "agent".equals(mode)){
+                rememberConversation(latestUserMessage,text);
+            }
             if("agent".equals(mode) && requiresWrite && termux.isConnected()) {
                 ArrayList<CodeArtifacts.Artifact> candidates=CodeArtifacts.extract(text);
                 if(!candidates.isEmpty()){
