@@ -56,11 +56,9 @@ public final class NativeAgent {
         family=selectedFamily;mode=requestedMode;
         requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|open|launch|click|tap|scroll|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل|افتح|اضغط|شغل|مرر).*");
         // Explicit, simple app-launch requests are handled by Android, not an unreliable model.
-        java.util.regex.Matcher open=java.util.regex.Pattern.compile(
-            "^\\s*(?:افتح|افتحلي|شغل|شغّل|open|launch)\\s+([\\p{L}\\p{N} ._-]{2,90})\\s*$",
-            java.util.regex.Pattern.CASE_INSENSITIVE).matcher(goal);
-        if("agent".equals(mode) && open.matches()) {
-            String app=open.group(1).trim();
+        String directApp=LocalIntents.appToOpen(goal);
+        if("agent".equals(mode) && directApp!=null) {
+            String app=directApp;
             ui.log("Opening "+app+" directly through Android...");
             try {
                 JSONObject result=phone.open(app);
