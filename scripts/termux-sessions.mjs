@@ -31,7 +31,7 @@ async function start(encoded,workdir,yieldMs){
   if(cwd!==base&&!cwd.startsWith(base+path.sep))fail('Workdir escapes workspace');
   const id=crypto.randomBytes(12).toString('hex'),dir=await state(id);
   await fs.mkdir(dir,{mode:0o700});
-  await save(dir,{id,status:'starting',command:cmd.slice(0,150),cwd,created:Date.now(),exit_code:null});
+  await save(dir,{id,status:'starting',command:cmd,cwd,created:Date.now(),exit_code:null});
   const child=spawn(process.execPath,[process.argv[1],'worker',id],{cwd:HOME,detached:true,stdio:'ignore',env:process.env});
   child.unref();
   const deadline=Date.now()+Math.max(0,Math.min(1200,Number(yieldMs)||0));
