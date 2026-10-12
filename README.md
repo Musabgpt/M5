@@ -90,3 +90,23 @@ Not implemented: a full VS Code language server, interactive PTY, reliable phone
 - **No model API or server required:** local file snapshots, native Git and project tools run via the existing one-shot Termux bridge. Free model providers, opt-in Android Accessibility controls, source Check/Run, project export and saved encrypted drafts are retained.
 
 **Limitations and safety:** Native History is under Termux's local files and is lost if Termux's private home is wiped. It is not encrypted separately from Termux app sandbox permissions. Don't confuse it with an off-device backup. The preview compares up to 35 changed line positions, not a semantic code diff. Git diff shows only tracked unstaged changes, and Git operations require that `git` be installed in Termux. `git init` changes local disk only. This remains a preview, not a full Cursor-compatible IDE or production-ready phone controller. GitHub Actions cannot establish that it works on a physical Samsung device.
+
+
+## M5 AEOS 0.9 — native preview
+
+Source branch: `feat/aeos-v09-core`. Pull request: https://github.com/Musabgpt/M5/pull/7
+
+**Installable Android debug package:** `com.musabgpt.m5.aeos9`, labelled **M5 AEOS 0.9**. It installs alongside previous M5 previews and preserves their existing data. This does **not** automatically migrate old app-private encrypted drafts.
+
+This is an implemented **partial** AEOS engineering milestone, not a literal or complete implementation of every aspirational property in the user specification.
+
+### What works in the code
+
+- **Native AEOS tab:** exposes real agent phase/counters, approximate character-derived context size, and provider mesh scoring/cooldowns. It also offers a user-approved local CDP read-only browser observation, which requires a Chromium debugging target to have been separately enabled on the device. The tab never starts a browser server.
+- **Unified source patch:** Files → open an existing file → Save if needed → **Patch**. Paste a valid `--- a/file` / `+++ b/file` unified diff with standard hunks, confirm twice, and M5 validates the current saved SHA-256, exact hunk context and JS/Python/shell syntax (when supported), takes a local checkpoint and atomically renames the patched source. A patch that fails preflight does not update the source. This is an exact-context line diff, **not an AST-aware type analysis engine**.
+- **Agent patch/CDP tools:** model schema supports `apply_patch {path,diff,expectedHash}` and `browser_observe {port}`. Both require human approval, and model output cannot bypass path validation or read current browser content without consent.
+- **Adaptive free provider mesh:** an EWMA latency / success reliability scoring policy with per-route cooldowns for 429, 503 and other errors. Original provider families and optional user-keyed official free plans are retained. No claim of unlimited free API usage or a deterministic 150ms HTTP retry.
+- **Bounded inference context:** maintains a separate character-bounded provider payload while keeping in-memory agent messages unchanged. This does not claim to implement true semantic AST compression.
+- **Restricted AI command execution:** generic Shell calls only admit a small set of status, known test and explicit Termux package installation commands; arbitrary destructive shell metacharacters and privilege escalation requests are refused. Source execution remains user-approved and still runs with the Termux app's normal permissions.
+
+See [AEOS implementation, limits and acceptance](docs/AEOS_ENGINEERING.md) and the existing device verification guides. Real Samsung physical-device acceptance and a full Chromium/CDP integration are outstanding. Full LSP/typed AST refactor, visual screenshot diffs, parallel worktrees and autonomous Git promotion remain future engineering work.

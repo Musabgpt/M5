@@ -170,7 +170,7 @@ public final class M5Activity extends Activity {
             return insets;
         });
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
-        TextView logo=label("M5 STUDIO 0.8",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
+        TextView logo=label("M5 AEOS 0.9",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
         connection=label("↻ Connect Termux",13,ACCENT);
         connection.setContentDescription("Connect M5 to Termux tools");
@@ -180,7 +180,7 @@ public final class M5Activity extends Activity {
         HorizontalScrollView scroller=new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
         LinearLayout tabs=horizontal();
-        for(String name:new String[]{"Files","Agent","Phone","Terminal","Providers"}) {
+        for(String name:new String[]{"Files","Agent","AEOS","Phone","Terminal","Providers"}) {
             Button b=button(name,()->showPanel(name.toLowerCase()));
             tabButtons.put(name.toLowerCase(),b);
             LinearLayout.LayoutParams tabLayout=new LinearLayout.LayoutParams(dp(96),dp(44));
@@ -233,6 +233,7 @@ public final class M5Activity extends Activity {
         switch(name){
             case "files":showFiles();break;
             case "agent":showAgent();break;
+            case "aeos":showAEOS();break;
             case "phone":showPhone();break;
             case "terminal":showTerminal();break;
             case "providers":showProviders();break;
@@ -339,6 +340,7 @@ public final class M5Activity extends Activity {
         if(selectedFile.isEmpty())actions.addView(button("Drafts",this::showSavedDrafts),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("History",()->requireTermux(this::showFileHistory)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(!selectedFile.isEmpty())actions.addView(button("Patch",()->requireTermux(this::reviewSourcePatch)),new LinearLayout.LayoutParams(0,dp(48),1));
         // Use horizontally scrollable full-size actions, not cramped 0-width weighted buttons.
         for(int i=0;i<actions.getChildCount();i++){
             View item=actions.getChildAt(i);
@@ -892,6 +894,87 @@ public final class M5Activity extends Activity {
                 }).show());
         }));
     }
+    private void showAEOS(){
+        caption("AEOS CONTROL / TELEMETRY");
+        info("Native edge tools · Zero-root Termux · explicit permission for edits, runs and screen reads");
+        ScrollView scroll=new ScrollView(this);
+        LinearLayout panel=vertical();
+        scroll.addView(panel);
+        body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        panel.addView(label("TERMUX NODE",15,ACCENT));
+        panel.addView(label(connected?"● Workspace bridge initialized":"○ Termux offline · tap Connect Termux",13,MUTED));
+        panel.addView(label("AGENT LOOP",15,ACCENT));
+        panel.addView(label(agent.statusReport(),13,Color.WHITE));
+        panel.addView(label("FREE PROVIDER MESH",15,ACCENT));
+        panel.addView(label(models.meshStatus(),13,MUTED));
+        panel.addView(button("Refresh live status",()->showPanel("aeos")));
+        panel.addView(label("BROWSER OBSERVATION NODE",15,ACCENT));
+        panel.addView(label("Optional. Connects only to a locally started Chromium/CDP target. M5 does not start a browser debugging server or promise CDP is available on every Android phone.",13,MUTED));
+        panel.addView(button("Inspect local CDP browser",()->requireTermux(()->{
+            EditText port=input("CDP localhost TCP port · 9222",1);
+            port.setSingleLine(true);
+            port.setInputType(InputType.TYPE_CLASS_NUMBER);
+            port.setText("9222");
+            new AlertDialog.Builder(M5Activity.this)
+                .setTitle("Read local browser DOM?")
+                .setMessage("Only read the page title, URL, readiness, DOM node count and horizontal overflow from an already running LOCAL CDP debugger. Private URL information stays in M5 unless you separately approve sending it to an AI model.")
+                .setView(port)
+                .setNegativeButton("Cancel",null)
+                .setPositiveButton("Observe once",(dialog,which)->{
+                    termux.tool("browser_observe",new String[]{port.getText().toString().trim()},new TermuxBridge.Callback(){
+                        @Override public void finished(JSONObject result){
+                            new AlertDialog.Builder(M5Activity.this)
+                                .setTitle(result.optBoolean("pageAvailable")?"CDP DOM observation":"CDP has no page target")
+                                .setMessage(result.toString())
+                                .setPositiveButton("OK",null).show();
+                        }
+                        @Override public void failed(String error){showError("Browser CDP unavailable",error);}
+                    });
+                }).show();
+        })));
+        panel.addView(label("ENGINEERING LIMITS",15,ACCENT));
+        panel.addView(label("CDP requires an exposed local debugging target. Syntax preflight is not runtime/visual verification. Provider quotas and response times are not guaranteed. All code runs with the Termux app user's privileges, not a hardened separate OS container.",13,MUTED));
+    }
+
+    private void reviewSourcePatch(){
+        if(editor==null||selectedFile.isEmpty())return;
+        final String path=editorFile,baseHash=originalHash;
+        if(baseHash.isEmpty()||!lastSavedContent.equals(editor.getText().toString())){
+            showError("Save current source first","Unified patches operate on an exact saved revision. Save your current edits before applying an external patch.");
+            return;
+        }
+        EditText patch=input("Paste unified diff starting with --- a/"+path,9);
+        patch.setTypeface(Typeface.MONOSPACE);
+        new AlertDialog.Builder(this).setTitle("AEOS · Review unified patch")
+            .setMessage("Expected source SHA-256: "+baseHash+
+                "\nOnly exact-context patch hunks are accepted. Invalid syntax and stale revisions are rejected.")
+            .setView(patch).setNegativeButton("Cancel",null)
+            .setPositiveButton("Inspect and approve",(dialog,which)->{
+                String diff=patch.getText().toString();
+                if(diff.getBytes(StandardCharsets.UTF_8).length>28000){
+                    showError("Patch too large","Diff must be 28KB or smaller");return;
+                }
+                new AlertDialog.Builder(M5Activity.this)
+                    .setTitle("Confirm changing "+path)
+                    .setMessage(diff.length()>3400?diff.substring(0,3400)+"\n[Diff display truncated]":diff)
+                    .setNegativeButton("Reject",null)
+                    .setPositiveButton("Apply atomically",(d,w)->{
+                        String encoded=Base64.encodeToString(diff.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
+                        termux.tool("patch_apply",new String[]{path,encoded,baseHash},new TermuxBridge.Callback(){
+                            @Override public void finished(JSONObject result){
+                                if(!path.equals(editorFile)||!baseHash.equals(originalHash)){
+                                    showError("Patch applied","Source file was patched and checkpointed. Reopen "+path+" to inspect the actual contents.");
+                                    return;
+                                }
+                                toast("Patch applied · revision verified");
+                                openFile(path);
+                            }
+                            @Override public void failed(String error){showError("Patch rejected; original preserved",error);}
+                        });
+                    }).show();
+            }).show();
+    }
+
     private void showPhone() {
         caption("ANDROID PHONE CONTROL");
         info("Launch installed apps directly, without any AI provider. Advanced screen controls require you to enable Accessibility.");
