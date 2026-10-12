@@ -109,6 +109,16 @@ public final class M5Activity extends Activity {
         // App renders natively even when Termux is missing; no fake connected state.
     }
 
+    @Override protected void onPause(){
+        persistVisibleDraft();
+        super.onPause();
+    }
+    @Override protected void onDestroy(){
+        autosaveHandler.removeCallbacks(autosaveTask);
+        persistVisibleDraft();
+        super.onDestroy();
+    }
+
     private int dp(float n) {return (int)(getResources().getDisplayMetrics().density*n+.5f);}
     private LinearLayout vertical(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
     private LinearLayout horizontal(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
@@ -314,6 +324,7 @@ public final class M5Activity extends Activity {
         actions.addView(button("New file",()->requireTermux(this::newFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("New project",()->requireTermux(this::newProject)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("Search",()->requireTermux(this::searchWorkspace)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(selectedFile.isEmpty())actions.addView(button("Drafts",this::showSavedDrafts),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(actions);
         if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
@@ -326,9 +337,18 @@ public final class M5Activity extends Activity {
             source.setHint("Write your source code here");
             source.setFilename(selectedFile);
             editor=source;
+            editorFile=selectedFile;
             editor.setMinLines(10);
             editor.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
             editor.setText(unsavedDrafts.containsKey(selectedFile)?unsavedDrafts.get(selectedFile):lastSavedContent);
+            editor.addTextChangedListener(new TextWatcher(){
+                @Override public void beforeTextChanged(CharSequence text,int start,int count,int after){}
+                @Override public void onTextChanged(CharSequence text,int start,int before,int count){}
+                @Override public void afterTextChanged(Editable value){
+                    autosaveHandler.removeCallbacks(autosaveTask);
+                    autosaveHandler.postDelayed(autosaveTask,700);
+                }
+            });
             body.addView(editor,new LinearLayout.LayoutParams(-1,0,1));
             body.addView(button("Explorer · keep draft",()->{
                 rememberDraft();
