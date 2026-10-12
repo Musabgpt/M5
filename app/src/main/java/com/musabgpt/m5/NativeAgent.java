@@ -169,10 +169,14 @@ public final class NativeAgent {
             close(writes>0&&validations==0?"Blocked: no successful verification after last edit.":((requiresWrite && writes==0 || requiresAction && writes==0 && validations==0 && phoneActions==0) && "agent".equals(mode) ? "Blocked: no real action was observed." : "Agent finished."));
             return;
         }
+        if(name.startsWith("phone_")){
+            // The AgentProtocol whitelist has already validated the exact tool.
+            runPhone(name,toolArgs);
+            return;
+        }
         if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff")){
             observed(name,"REJECTED: unregistered tool");return;
         }
-        if(name.startsWith("phone_")){runPhone(name,toolArgs);return;}
         final boolean modifying=name.equals("write_file")||name.equals("run_command");
         if(!termux.isConnected()) {
             ui.log("Termux is not connected. No project tool was executed.");
