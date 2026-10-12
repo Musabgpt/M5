@@ -48,9 +48,10 @@ export class AgentManager {
   snapshot(id, after = -1) {
     const job = this.jobs.get(id);
     if (!job) throw new Error('Unknown task');
-    return { id: job.id, status: job.status, goal: job.goal, pending: job.pending?.display || null, evidence: job.evidence, events: job.events.filter(e => e.index > after) };
+    return { id: job.id, status: job.status, mode: job.mode, goal: job.goal, pending: job.pending?.display || null, evidence: job.evidence, events: job.events.filter(e => e.index > after) };
   }
-  start(goal, family = 'freellmpool') {
+  start(goal, family = 'freellmpool', mode = 'agent') {
+    if (!['agent', 'plan'].includes(mode)) throw new Error('Invalid agent mode');
     if (typeof goal !== 'string' || !goal.trim() || goal.length > 10000) throw new Error('Invalid goal');
     if ([...this.jobs.values()].some(j => ['running','approval'].includes(j.status))) throw new Error('Another agent job is active');
     while (this.jobs.size >= 50) {
@@ -59,7 +60,7 @@ export class AgentManager {
       this.jobs.delete(oldest);
     }
     const id = crypto.randomUUID();
-    const job = { id, goal, family, status: 'running', createdAt: Date.now(), events: [], nextIndex: 0, pending: null, evidence: { writes: 0, checks: 0 }, controller: new AbortController() };
+    const job = { id, goal, family, mode, status: 'running', createdAt: Date.now(), events: [], nextIndex: 0, pending: null, evidence: { writes: 0, checks: 0 }, controller: new AbortController() };
     this.jobs.set(id, job);
     this.run(job).catch(e => { if (job.status !== 'cancelled') { job.status = 'failed'; this.emit(job, 'error', e.message); } });
     return this.snapshot(id);
@@ -84,7 +85,8 @@ export class AgentManager {
     return { stopped: true };
   }
   async run(job) {
-    const messages = [{ role: 'system', content: SYSTEM }, { role: 'user', content: job.goal + '\nStart by inspecting the codebase. Do not claim unobserved results.' }];
+    const instruction = job.mode === 'plan' ? '\nPLAN MODE: use only read tools. Propose a specific implementation and verification plan. Do NOT write or execute commands.' : '\nAGENT MODE: inspect the codebase and do not claim unobserved results.';
+    const messages = [{ role: 'system', content: SYSTEM }, { role: 'user', content: job.goal + instruction }];
     for (let step = 1; step <= this.maxSteps; step++) {
       if (job.controller.signal.aborted) return;
       this.emit(job, 'step', { step, maxSteps: this.maxSteps });
@@ -97,7 +99,7 @@ export class AgentManager {
       catch (e) { job.status = 'blocked'; this.emit(job, 'error', 'Invalid model tool call: ' + e.message); return; }
       if (!calls.length) {
         this.emit(job, 'answer', (response.content || '').slice(0, 12000));
-        const noEvidence = ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks;
+        const noEvidence = job.mode === 'agent' && ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks;
         job.status = (job.evidence.writes && !job.evidence.checks) || noEvidence ? 'blocked' : 'completed';
         if (job.status === 'blocked') this.emit(job, 'warning', 'No verifiable project action, or files changed without a successful check');
         return;
@@ -108,6 +110,12 @@ export class AgentManager {
         const spec = validateCall(call.name, call.arguments);
         this.emit(job, 'tool', { name: call.name, arguments: call.name === 'write_file' ? { path: call.arguments.path, contentBytes: Buffer.byteLength(call.arguments.content || '') } : call.arguments });
         let result;
+        if (job.mode === 'plan' && spec.risk !== 'read') {
+          const refusal = { denied: true, reason: 'Plan mode is strictly read-only; change to Agent mode to execute' };
+          this.emit(job, 'tool_error', { name: call.name, error: refusal.reason });
+          messages.push({ role: 'user', content: 'Observed tool rejection: ' + JSON.stringify(refusal) });
+          continue;
+        }
         if (spec.risk !== 'read') {
           const display = {
             id: crypto.randomUUID(), risk: spec.risk, name: call.name,
@@ -139,7 +147,7 @@ export class AgentManager {
         }
         messages.push({ role: 'user', content: 'OBSERVED result for ' + call.name + ': ' + JSON.stringify(result).slice(0, 14000) });
         if (call.name === 'finish') {
-          if ((job.evidence.writes && !job.evidence.checks) || (ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks)) {
+          if ((job.evidence.writes && !job.evidence.checks) || (job.mode === 'agent' && ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks)) {
             job.status = 'blocked'; this.emit(job, 'warning', 'No verified project action or successful check');
           } else {
             job.status = 'completed'; this.emit(job, 'answer', result.summary);
