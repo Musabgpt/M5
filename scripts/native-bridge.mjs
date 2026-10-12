@@ -78,12 +78,14 @@ async function write(relative,b64,expected) {
   if(!Buffer.from(content,'utf8').equals(bytes))fail('Invalid UTF-8 content');
   const file=await target(relative,true);
   let original='';
+  let existed=false;
   try {
     const stat=await fs.stat(file);
     if(!stat.isFile()||stat.size>MAX_FILE)fail('Existing file too large');
+    existed=true;
     original=await fs.readFile(file);
   }catch(e){if(e.code!=='ENOENT')throw e;}
-  if(sha(original)!==expected)fail('File changed since it was read; reload before saving');
+  if(sha(original)!==expected && !(existed===false && expected===''))fail('File changed since it was read; reload before saving');
   const temp=file+'.m5-'+crypto.randomBytes(6).toString('hex');
   try {
     await fs.writeFile(temp,bytes,{flag:'wx',mode:0o600});
