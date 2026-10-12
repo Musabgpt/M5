@@ -358,6 +358,76 @@ async function auditProject(project){
     results,note:'Syntax checks only; not a unit-test suite or proof of runtime correctness'};
 }
 
+
+/** Project-scoped Git, executed as explicit argv, never through shell evaluation. */
+async function safeGitProject(relative){
+  if(typeof relative!=='string'||relative.length<2)fail('Select an existing project folder');
+  const parts=valid(relative);
+  if(parts.length===0)fail('Git requires a named workspace project');
+  const folder=await target(relative);
+  const stat=await fs.lstat(folder);
+  if(!stat.isDirectory()||stat.isSymbolicLink())fail('Git requires a real project directory');
+  try {
+    const gitDir=await fs.lstat(path.join(folder,'.git'));
+    if(gitDir.isSymbolicLink()||!gitDir.isDirectory())
+      fail('Unsupported Git metadata type (worktrees and linked repositories are not changed)');
+  }catch(e){if(e.code!=='ENOENT')throw e;}
+  return folder;
+}
+async function gitProcess(relative,args,timeout=12000){
+  const folder=await safeGitProject(relative);
+  const env=Object.fromEntries(
+    ['PATH','HOME','TMPDIR','LANG','TERM'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])
+  );
+  env.GIT_CONFIG_NOSYSTEM='1';
+  env.GIT_CONFIG_GLOBAL='/dev/null';
+  return await new Promise((resolve,reject)=>{
+    let stdout='',stderr='',truncated=false,timedOut=false,done=false;
+    const safeArgs=['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',...args];
+    const proc=spawn('git',safeArgs,{cwd:folder,env,stdio:['ignore','pipe','pipe']});
+    for(const [stream,name] of [[proc.stdout,'stdout'],[proc.stderr,'stderr']]){
+      stream.on('data',chunk=>{
+        const current=name==='stdout'?stdout:stderr;
+        const next=current+chunk.toString('utf8');
+        if(next.length>16000)truncated=true;
+        if(name==='stdout')stdout=next.slice(0,16000);
+        else stderr=next.slice(0,5000);
+      });
+    }
+    const timer=setTimeout(()=>{timedOut=true;proc.kill('SIGKILL');},timeout);
+    proc.once('error',error=>{
+      if(done)return;done=true;clearTimeout(timer);
+      reject(new Error(error.code==='ENOENT'?'Git is not installed in Termux':error.message));
+    });
+    proc.once('close',(exitCode,signal)=>{
+      if(done)return;done=true;clearTimeout(timer);
+      resolve({project:relative,command:'git '+args.join(' '),exitCode,signal,
+        success:exitCode===0&&!timedOut,timedOut,truncated,stdout,stderr});
+    });
+  });
+}
+async function gitProjectStatus(relative){
+  const result=await gitProcess(relative,['status','--porcelain=v1','--untracked-files=normal'],12000);
+  return {...result,note:'Project-local Git status. No fetch, push or network.'};
+}
+async function gitProjectDiff(relative){
+  const result=await gitProcess(relative,['diff','--no-ext-diff','--unified=3','--'],12000);
+  return {...result,note:'Tracked unstaged changes only. Untracked files are not included.'};
+}
+async function gitProjectInit(relative){
+  const folder=await safeGitProject(relative);
+  const existing=await fs.readdir(folder);
+  if(existing.includes('.git'))fail('This folder already has a Git repository');
+  const result=await gitProcess(relative,['init','--initial-branch=main'],15000);
+  if(!result.success)fail('Git init failed: '+result.stderr.slice(0,300));
+  const ignore=path.join(folder,'.gitignore');
+  const ignores='node_modules/\ndist/\nbuild/\n.env\n.env.*\n*.pem\n*.key\n*.p12\n*.keystore\n.m5/\n';
+  try{await fs.writeFile(ignore,ignores,{flag:'wx',mode:0o600});}
+  catch(e){if(e.code!=='EEXIST')throw e;}
+  return {project:relative,created:true,gitignoreCreated:!existing.includes('.gitignore'),
+    note:'Initialized local Git only. No commit, push, account login, or network operation was performed.'};
+}
+
 async function main(){
   await fs.mkdir(ROOT,{recursive:true,mode:0o700});
   const [verb,...args]=process.argv.slice(2);
@@ -371,6 +441,9 @@ async function main(){
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
     case 'history_list':data=await historyList(args[0]);break;
+    case 'git_project_status':data=await gitProjectStatus(args[0]);break;
+    case 'git_project_diff':data=await gitProjectDiff(args[0]);break;
+    case 'git_project_init':data=await gitProjectInit(args[0]);break;
     case 'history_compare':data=await historyCompare(args[0],args[1]);break;
     case 'history_restore':data=await historyRestore(args[0],args[1],args[2]);break;
     case 'write':data=await write(args[0],args[1],args[2]);break;
