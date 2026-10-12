@@ -31,10 +31,11 @@ export function parseCalls(response) {
 }
 
 export class AgentManager {
-  constructor({ workspace, complete = chatCompletion, maxSteps = 16 }) {
+  constructor({ workspace, complete = chatCompletion, maxSteps = 16, checkpoints = null }) {
     this.workspace = workspace;
     this.complete = complete;
     this.maxSteps = maxSteps;
+    this.checkpoints = checkpoints;
     this.jobs = new Map();
   }
   emit(job, type, data) {
@@ -119,6 +120,10 @@ export class AgentManager {
         }
         if (!result) {
           try {
+            if (spec.risk === 'write' && this.checkpoints) {
+              const checkpoint = await this.checkpoints.capture(job.id, call.arguments.path);
+              this.emit(job, 'checkpoint', checkpoint);
+            }
             result = await invokeTool(this.workspace, call.name, call.arguments, { signal: job.controller.signal });
             if (spec.risk === 'write') job.evidence.writes++;
             if (call.name === 'run_command' && result.success) job.evidence.checks++;
