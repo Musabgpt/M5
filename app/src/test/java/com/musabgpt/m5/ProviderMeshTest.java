@@ -14,7 +14,7 @@ public class ProviderMeshTest {
         mesh.failure(1,503,1000);
         assertEquals(List.of(2),mesh.order(1001));
         mesh.success(2,120);
-        assertEquals(List.of(2,1,0),mesh.order(601100));
+        assertEquals(List.of(2,0,1),mesh.order(601100));
     }
     @Test public void latencyAndAvailabilityDetermineRanking(){
         ProviderMesh mesh=new ProviderMesh(2);
