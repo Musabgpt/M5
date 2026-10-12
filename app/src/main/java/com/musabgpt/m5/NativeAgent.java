@@ -122,12 +122,12 @@ public final class NativeAgent {
     }
     String statusReport(){
         int estimated=ContextBudget.estimateTokens(ContextBudget.pack(messages));
-        return "AEOS agent phase: "+phase+"\\n"+
-            "Active: "+active+"\\nMode: "+mode+"\\nProvider: "+providerRoute+
-            "\\nReasoning steps: "+steps+" / 12"+
-            "\\nVerified writes: "+writes+"\\nVerification events: "+validations+
-            "\\nPhone actions: "+phoneActions+
-            "\\nApprox. context tokens: "+estimated+" (heuristic; not model billing)";
+        return "AEOS agent phase: "+phase+"\n"+
+            "Active: "+active+"\nMode: "+mode+"\nProvider: "+providerRoute+
+            "\nReasoning steps: "+steps+" / 12"+
+            "\nVerified writes: "+writes+"\nVerification events: "+validations+
+            "\nPhone actions: "+phoneActions+
+            "\nApprox. context tokens: "+estimated+" (heuristic; not model billing)";
     }
     void clearConversation(){
         if(active)stop();
@@ -271,7 +271,8 @@ public final class NativeAgent {
         if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|audit_project|history_list|history_compare|history_restore|git_project_status|git_project_diff|git_project_init|apply_patch|browser_observe|git_status|git_diff")){
             observed(name,"REJECTED: unregistered tool");return;
         }
-        final boolean modifying=name.equals("write_file")||name.equals("run_command")||name.equals("run_file")||name.equals("history_restore")||name.equals("git_project_init")||name.equals("apply_patch")||name.equals("browser_observe");
+        final boolean modifying=name.equals("write_file")||name.equals("run_command")||name.equals("run_file")||name.equals("history_restore")||name.equals("git_project_init")||name.equals("apply_patch");
+        final boolean sensitiveRead=name.equals("browser_observe");
         if(!termux.isConnected()) {
             ui.log("Termux is not connected. No project tool was executed.");
             close("Blocked: tap Connect Termux in the top bar, then retry your project task.");
@@ -322,7 +323,7 @@ public final class NativeAgent {
                 }
             });
         };
-        if(!modifying){execute.run();return;}
+        if(!modifying&&!sensitiveRead){execute.run();return;}
         String detail=name.equals("browser_observe")
           ? "Read live DOM metrics and current page URL from an existing local CDP debugger on port "+args.optString("port","9222")+"? The observation will be sent to your selected AI provider."
           :name.equals("apply_patch")
