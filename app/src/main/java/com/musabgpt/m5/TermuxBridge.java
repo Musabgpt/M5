@@ -65,11 +65,27 @@ public final class TermuxBridge {
             callback.failed("Bundled native tools unavailable: "+e.getMessage());
             return;
         }
+        final String pythonEncoded;
+        try (InputStream input=activity.getAssets().open("pty_bridge.py");
+             ByteArrayOutputStream buffer=new ByteArrayOutputStream()) {
+            byte[] part=new byte[4096]; int n;
+            while((n=input.read(part))!=-1){
+                buffer.write(part,0,n);
+                if(buffer.size()>40000)throw new IllegalStateException("Bundled PTY script exceeds 40KB");
+            }
+            pythonEncoded=Base64.encodeToString(buffer.toByteArray(),Base64.NO_WRAP);
+        }catch(Exception e){
+            callback.failed("PTY session tools missing from APK: "+e.getMessage());
+            return;
+        }
         String script="set -eu; "
             + "command -v node >/dev/null 2>&1 || pkg install -y nodejs-lts 1>&2; "
             + "mkdir -p \"$HOME/m5-native/scripts\" \"$HOME/m5-workspace\"; "
             + "printf '%s' '"+encoded+"' | base64 -d > \"$HOME/m5-native/scripts/native-bridge.mjs.m5new\"; "
             + "mv \"$HOME/m5-native/scripts/native-bridge.mjs.m5new\" \"$HOME/m5-native/scripts/native-bridge.mjs\"; "
+            + "command -v python >/dev/null 2>&1 || pkg install -y python 1>&2; "
+            + "printf '%s' '"+pythonEncoded+"' | base64 -d > \"$HOME/m5-native/scripts/pty_bridge.py.m5new\"; "
+            + "mv \"$HOME/m5-native/scripts/pty_bridge.py.m5new\" \"$HOME/m5-native/scripts/pty_bridge.py\"; "
             + "node \"$HOME/m5-native/scripts/native-bridge.mjs\" ping";
         sessionReady=false;
         execute(PREFIX + "bash", new String[]{"-lc",script}, new Callback(){
@@ -97,6 +113,27 @@ public final class TermuxBridge {
         System.arraycopy(arguments, 0, full, 2, arguments.length);
         // Node is launched once per action; it is not a web server or daemon.
         execute(PREFIX + "node", full, callback, 75000);
+    }
+
+    /**
+     * Persistent interactive PTY sessions are owned by a Termux-UID Python
+     * process over an authenticated Unix-domain socket. Android only starts
+     * short-lived calls via the official background RUN_COMMAND contract.
+     */
+    public void session(String action,String[] arguments,Callback callback){
+        if(!isConnected()){
+            callback.failed("Connect Termux first; no command was dispatched.");
+            return;
+        }
+        if(!action.matches("ping|exec_command|write_stdin|read_output|terminate_process")){
+            callback.failed("Unsupported PTY tool action");
+            return;
+        }
+        String[] full=new String[arguments.length+2];
+        full[0]=HOME+"/m5-native/scripts/pty_bridge.py";
+        full[1]=action;
+        System.arraycopy(arguments,0,full,2,arguments.length);
+        execute(PREFIX+"python",full,callback,25000);
     }
 
     private void execute(String program, String[] arguments, Callback callback, int timeoutMs) {

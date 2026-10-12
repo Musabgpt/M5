@@ -32,12 +32,16 @@ public final class NativeAgent {
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     private int taskGeneration=0;
     private boolean consentedScreenRead=false;
+    private final java.util.LinkedHashSet<String> activeSessions=new java.util.LinkedHashSet<>();
+    private final java.util.HashMap<String,String> sessionCommands=new java.util.HashMap<>();
 
     private static final String SYSTEM =
       "You are M5, an Android coding agent with REAL workspace tools. "
     + "Project workspace is controlled by Termux with explicit user consent. "
     + "Available tools: list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
+    + "exec_command {command,workdir,yield_time_ms}, write_stdin {session_id,text}, "
+    + "read_output {session_id,cursor,yield_time_ms}, terminate_process {session_id}, "
     + "check_file {path,expectedHash}, run_file {path,expectedHash}, audit_project {path}, apply_patch {path,diff,expectedHash}, browser_observe {port}, history_list {path}, history_compare {path,id}, history_restore {path,id,expectedHash}, git_project_status {path}, git_project_diff {path}, git_project_init {path}, "
     + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
     + "phone_open_url {url}, phone_dial {number}, phone_sms_draft {number,text}, "
@@ -140,7 +144,17 @@ public final class NativeAgent {
         conversation.add(message("assistant",answer.substring(0,Math.min(3000,answer.length()))));
         while(conversation.size()>12)conversation.remove(0);
     }
-    void stop(){taskGeneration++;stopped=true;active=false;phase="INTERRUPTED";ui.finished("Stopped by user.");}
+    void stop(){
+        taskGeneration++;stopped=true;active=false;phase="INTERRUPTED";
+        for(String id:new java.util.ArrayList<>(activeSessions)){
+            termux.session("terminate_process",new String[]{id},new TermuxBridge.Callback(){
+                @Override public void finished(JSONObject receipt){ui.log("Stopped PTY session "+id);}
+                @Override public void failed(String error){ui.log("PTY stop uncertain: "+error);}
+            });
+        }
+        activeSessions.clear();sessionCommands.clear();
+        ui.finished("Stopped by user; PTY termination requested.");
+    }
     private JSONObject message(String role,String content){
         JSONObject obj=new JSONObject();
         try{obj.put("role",role);obj.put("content",content);}catch(Exception ignored){}
@@ -302,6 +316,90 @@ public final class NativeAgent {
         messages.put(message("user","OBSERVED result of "+tool+": "+(value.length()>12000?value.substring(0,12000):value)));
         advance();
     }
+    private void runPersistentTool(String action,JSONObject args){
+        if(!termux.isConnected()){
+            close("Blocked: connect Termux to use persistent PTY session tools.");
+            return;
+        }
+        boolean started="exec_command".equals(action);
+        boolean input="write_stdin".equals(action);
+        boolean kill="terminate_process".equals(action);
+        if("plan".equals(mode)&&(started||input||kill)){
+            observed(action,"REJECTED: Plan mode is read-only.");
+            return;
+        }
+        String[] params;
+        if(started){
+            params=new String[]{args.optString("command",""),
+                args.optString("workdir",""),String.valueOf(args.optInt("yield_time_ms",1000))};
+            if(args.optInt("yield_time_ms",1000)<0||args.optInt("yield_time_ms",1000)>10000){
+                observed(action,"REJECTED: yield_time_ms must be between 0 and 10000");
+                return;
+            }
+        }else if(input){
+            params=new String[]{args.optString("session_id",""),args.optString("text","")};
+        }else if("read_output".equals(action)){
+            params=new String[]{args.optString("session_id",""),
+                String.valueOf(args.optLong("cursor",0)),
+                String.valueOf(args.optInt("yield_time_ms",0))};
+        }else{
+            params=new String[]{args.optString("session_id","")};
+        }
+        ShellConsent.Decision policy=started
+            ?ShellConsent.classify(params[0]):ShellConsent.Decision.APPROVE_ONCE;
+        if(policy==ShellConsent.Decision.REJECT){
+            observed(action,"REJECTED: dangerous or invalid shell operation.");
+            return;
+        }
+        final int generation=taskGeneration;
+        Runnable execute=()->{
+            if(stopped||!active||generation!=taskGeneration)return;
+            phase="PTY_"+action.toUpperCase(Locale.ROOT);
+            ui.log("Termux PTY: "+action);
+            termux.session(action,params,new TermuxBridge.Callback(){
+                @Override public void finished(JSONObject result){
+                    if(!active||stopped||generation!=taskGeneration)return;
+                    if(started&&result.optBoolean("running",false)){
+                        String id=result.optString("session_id","");
+                        if(id.length()==32){activeSessions.add(id);sessionCommands.put(id,args.optString("command",""));}
+                    }
+                    if((started||"read_output".equals(action)) &&
+                       !result.optBoolean("running",false)){
+                        String id=result.optString("session_id","");
+                        String prior=started?args.optString("command",""):sessionCommands.getOrDefault(id,"");
+                        if(result.optBoolean("completed",false) &&
+                           result.optInt("exit_code",-1)==0 && isValidation(prior))validations++;
+                        activeSessions.remove(id);
+                        sessionCommands.remove(id);
+                    }
+                    observed(action,result.toString());
+                }
+                @Override public void failed(String message){
+                    if(!active||stopped||generation!=taskGeneration)return;
+                    observed(action,"ERROR: "+message);
+                }
+            });
+        };
+        if("read_output".equals(action) ||
+            (started&&policy==ShellConsent.Decision.SAFE_READ)){
+            execute.run();return;
+        }
+        String description=started
+            ?"Execute in Termux workspace as the Termux user:\n"+args.optString("command","")+
+             "\nFolder: "+args.optString("workdir","(workspace root)")+
+             "\nPackage installs, network and user code run with Termux permissions, not in an isolated container."
+            :input?"Send stdin to running session "+args.optString("session_id","")+
+                   ":\n"+args.optString("text","").substring(0,
+                       Math.min(1200,args.optString("text","").length()))
+            :"Terminate Termux process group for session "+args.optString("session_id","");
+        phase="AWAITING_APPROVAL";
+        ui.requestApproval("Approve "+action+"?",description,allow->{
+            if(!active||stopped||generation!=taskGeneration)return;
+            if(allow)execute.run();
+            else observed(action,"DENIED by user; nothing executed.");
+        });
+    }
+
     private void run(JSONObject call) {
         String name=call.optString("name","");
         JSONObject args=call.optJSONObject("arguments");
@@ -311,6 +409,10 @@ public final class NativeAgent {
             String summary=args.optString("summary","Task ended without a summary.");
             ui.log(summary);
             close(writes>0&&validations==0?"Blocked: no successful verification after last edit.":((requiresWrite && writes==0 || requiresAction && writes==0 && validations==0 && phoneActions==0) && "agent".equals(mode) ? "Blocked: no real action was observed." : "Agent finished."));
+            return;
+        }
+        if(name.matches("exec_command|write_stdin|read_output|terminate_process")){
+            runPersistentTool(name,toolArgs);
             return;
         }
         if(name.startsWith("phone_")){

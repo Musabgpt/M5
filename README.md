@@ -128,3 +128,17 @@ See [AEOS implementation, limits and acceptance](docs/AEOS_ENGINEERING.md) and t
 No mobile process can be guaranteed never to crash, and network failover cannot be guaranteed within 150ms. The *decision to switch* after a 429 happens locally without a retry delay, but the next network call has its own latency. Free endpoints can be unavailable, change terms or reject requests. The local fallback deliberately supports only safe, predetermined templates; it cannot finish arbitrary tasks without a model. API keys are encrypted at rest with Android Keystore, not guaranteed to reside exclusively in volatile RAM. Android Accessibility actions still require user opt-in. GitHub Actions success is not physical-device acceptance.
 
 [Implementation and device checks](docs/FREE_MESH.md).
+
+## M5 Agent PTY 0.11 — autonomous Termux command tools
+
+This update adds model-callable exec_command, write_stdin, read_output and terminate_process tools. Termux still runs in the background through Android RUN_COMMAND; no WebView, ttyd, embedded terminal or M5 HTTP server is created.
+
+On Connect Termux, the APK installs the bundled pty_bridge.py to the private Termux scripts directory, and ensures Python is available. The Python daemon is started lazily when first needed; it uses an authenticated private Unix domain socket with a 0600 token inside Termux, preserving PTY sessions between one-shot Android calls.
+
+exec_command accepts a shell command and workdir relative to ~/m5-workspace and yield_time_ms (0–10000). Results include a session ID, incremental cursor, real process exit code and running flag. Output is merged stdout/stderr because a PTY cannot separately attribute the two streams. read_output retrieves new output, write_stdin sends input after user approval, and terminate_process sends SIGTERM to that process group. Agent Stop also requests termination of tracked active sessions.
+
+Session output and the actual command result are fed into the next LLM step, allowing model-driven run/check/fix loops. Existing file, patch and Git tools remain available. The command approval policy rejects obvious destructive/root/force-push commands; ordinary read-only commands may proceed while installs, arbitrary scripts and interactive stdin require a visible one-time approval.
+
+Sessions do not survive Termux daemon or Android OS process termination. Lost sessions are reported and are not automatically replayed, preventing duplicate package installs or edits. This is an app-sandbox process engine, not a secure container for hostile commands. Real Samsung Android foreground-service and battery restrictions still apply.
+
+Installable debug application ID: com.musabgpt.m5.termux11, independent of older versions. CI runs real Python PTY integration tests and Android Java/build tests. Full physical-phone acceptance is not implied by CI success.
