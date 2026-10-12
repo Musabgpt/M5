@@ -10,6 +10,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONObject;
@@ -46,27 +49,40 @@ public final class TermuxBridge {
     }
 
     public void setup(Callback callback) {
-        String script = "set -eu; "
-            + "command -v git >/dev/null 2>&1 || pkg install -y git >/dev/null; "
-            + "command -v node >/dev/null 2>&1 || pkg install -y nodejs-lts >/dev/null; "
-            + "if [ ! -f \"$HOME/m5-native/scripts/native-bridge.mjs\" ]; then "
-            + "git clone --depth 1 --branch feat/native-android-no-server https://github.com/Musabgpt/M5.git \"$HOME/m5-native\" 1>&2; fi; "
-            + "cd \"$HOME/m5-native\"; "
-            + "if [ \"$(git branch --show-current)\" = \"feat/native-android-no-server\" ] "
-            + "&& [ -z \"$(git status --porcelain --untracked-files=no)\" ]; then "
-            + "git fetch --quiet --depth=80 origin feat/native-android-no-server 1>&2 "
-            + "&& git merge --ff-only FETCH_HEAD 1>&2 || true; fi; "
-            + "test -f scripts/native-bridge.mjs; "
-            + "node scripts/native-bridge.mjs ping";
-        sessionReady=false;
-        execute(PREFIX + "bash", new String[]{"-lc", script}, new Callback(){
-            @Override public void finished(JSONObject data){
-                sessionReady=data.optBoolean("ready",false);
-                if(sessionReady)callback.finished(data);
-                else callback.failed("Termux did not complete workspace initialization");
+        // The one-shot Node bridge ships INSIDE the APK. No GitHub checkout,
+        // HTTP server, or remote script download is needed to use Termux tools.
+        final String encoded;
+        try (InputStream input=activity.getAssets().open("native-bridge.mjs");
+             ByteArrayOutputStream buffer=new ByteArrayOutputStream()) {
+            byte[] part=new byte[4096];
+            int n;
+            while((n=input.read(part))!=-1) {
+                buffer.write(part,0,n);
+                if(buffer.size()>80000) throw new IllegalStateException("Bundled Termux bridge too large");
             }
-            @Override public void failed(String message){sessionReady=false;callback.failed(message);}
-        }, 120000);
+            encoded=Base64.encodeToString(buffer.toByteArray(),Base64.NO_WRAP);
+        } catch (Exception e) {
+            callback.failed("Bundled native tools unavailable: "+e.getMessage());
+            return;
+        }
+        String script="set -eu; "
+            + "command -v node >/dev/null 2>&1 || pkg install -y nodejs-lts 1>&2; "
+            + "mkdir -p \"$HOME/m5-native/scripts\" \"$HOME/m5-workspace\"; "
+            + "printf '%s' '"+encoded+"' | base64 -d > \"$HOME/m5-native/scripts/native-bridge.mjs.m5new\"; "
+            + "mv \"$HOME/m5-native/scripts/native-bridge.mjs.m5new\" \"$HOME/m5-native/scripts/native-bridge.mjs\"; "
+            + "node \"$HOME/m5-native/scripts/native-bridge.mjs\" ping";
+        sessionReady=false;
+        execute(PREFIX + "bash", new String[]{"-lc",script}, new Callback(){
+            @Override public void finished(JSONObject data) {
+                sessionReady=data.optBoolean("ready",false);
+                if(sessionReady) callback.finished(data);
+                else callback.failed("Termux did not confirm the native workspace");
+            }
+            @Override public void failed(String reason) {
+                sessionReady=false;
+                callback.failed(reason);
+            }
+        },120000);
     }
 
     public void tool(String action, String[] arguments, Callback callback) {
