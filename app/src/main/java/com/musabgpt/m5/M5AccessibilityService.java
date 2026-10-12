@@ -2,6 +2,16 @@ package com.musabgpt.m5;
 
 import android.accessibilityservice.AccessibilityService;
 import android.graphics.Rect;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Button;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import android.os.Bundle;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -19,6 +29,8 @@ public final class M5AccessibilityService extends AccessibilityService {
     private final Map<Integer,AccessibilityNodeInfo> nodes = new LinkedHashMap<>();
     private String observedPackage="";
     private long observedAt=0;
+    private View consentOverlay;
+    private Consumer<Boolean> consentReply;
 
     public static M5AccessibilityService active() { return active; }
     @Override public void onServiceConnected() { active=this; }
@@ -27,8 +39,64 @@ public final class M5AccessibilityService extends AccessibilityService {
     }
     @Override public void onInterrupt() {}
     @Override public void onDestroy() {
+        if(consentReply!=null){Consumer<Boolean> pending=consentReply;consentReply=null;pending.accept(false);}
+        if(consentOverlay!=null){try{((WindowManager)getSystemService(WINDOW_SERVICE)).removeView(consentOverlay);}catch(Exception ignored){}consentOverlay=null;}
         if(active==this)active=null;
         nodes.clear();super.onDestroy();
+    }
+
+    /**
+     * Approval remains visible when the target app (e.g. WhatsApp) is foreground.
+     * This uses an Android accessibility overlay, NOT an invisible permission bypass.
+     */
+    public void askOnScreen(String title,String details,Consumer<Boolean> callback) {
+        if(consentOverlay!=null){callback.accept(false);return;}
+        try {
+            WindowManager wm=(WindowManager)getSystemService(WINDOW_SERVICE);
+            LinearLayout bar=new LinearLayout(this);
+            bar.setOrientation(LinearLayout.VERTICAL);
+            bar.setPadding(24,18,24,18);
+            bar.setBackgroundColor(Color.rgb(31,35,45));
+            TextView heading=new TextView(this);
+            heading.setText("M5 · "+title);
+            heading.setTextColor(Color.WHITE);
+            heading.setTextSize(17);
+            bar.addView(heading);
+            TextView description=new TextView(this);
+            description.setText(details.length()>300?details.substring(0,300)+"…":details);
+            description.setTextColor(Color.LTGRAY);
+            description.setTextSize(13);
+            bar.addView(description);
+            LinearLayout controls=new LinearLayout(this);
+            Button deny=new Button(this);deny.setText("Deny");
+            Button allow=new Button(this);allow.setText("Approve once");
+            controls.addView(deny,new LinearLayout.LayoutParams(0,-2,1));
+            controls.addView(allow,new LinearLayout.LayoutParams(0,-2,1));
+            bar.addView(controls);
+            WindowManager.LayoutParams params=new WindowManager.LayoutParams(
+                -1,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+            params.gravity=Gravity.TOP;
+            final AtomicBoolean completed=new AtomicBoolean(false);
+            consentOverlay=bar;consentReply=callback;
+            final Runnable reject=()->completeOverlay(wm,false,completed);
+            deny.setOnClickListener(v->reject.run());
+            allow.setOnClickListener(v->completeOverlay(wm,true,completed));
+            wm.addView(bar,params);
+        } catch(Exception error) {
+            consentOverlay=null;consentReply=null;
+            callback.accept(false);
+        }
+    }
+    private void completeOverlay(WindowManager wm,boolean allow,AtomicBoolean completed){
+        if(!completed.compareAndSet(false,true))return;
+        if(consentOverlay!=null) {
+            try{wm.removeView(consentOverlay);}catch(Exception ignored){}
+            consentOverlay=null;
+        }
+        Consumer<Boolean> result=consentReply;consentReply=null;
+        if(result!=null)result.accept(allow);
     }
 
     public JSONObject observe() throws Exception {
@@ -76,7 +144,7 @@ public final class M5AccessibilityService extends AccessibilityService {
         return text;
     }
     private AccessibilityNodeInfo recentNode(int id) {
-        if(android.os.SystemClock.uptimeMillis()-observedAt>15000)
+        if(android.os.SystemClock.uptimeMillis()-observedAt>45000)
             throw new IllegalStateException("Screen observation is stale. Observe again before acting.");
         AccessibilityNodeInfo current=getRootInActiveWindow();
         if(current==null||!observedPackage.equals(String.valueOf(current.getPackageName())))
