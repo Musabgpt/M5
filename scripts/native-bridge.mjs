@@ -153,7 +153,7 @@ async function historyEntries(relative) {
     result.push(meta);
   }
   result.sort((a,b)=>b.id.localeCompare(a.id));
-  return result.slice(0,HISTORY_LIMIT);
+  return result;
 }
 async function snapshotBeforeWrite(relative,bytes){
   const dir=await historyFolder(relative,true);
@@ -189,7 +189,7 @@ async function checkpointSource(relative,id){
 async function historyList(relative){
   const current=await read(relative);
   const entries=await historyEntries(relative);
-  return {path:relative,currentHash:current.hash,entries,limit:HISTORY_LIMIT};
+  return {path:relative,currentHash:current.hash,entries:entries.slice(0,HISTORY_LIMIT),limit:HISTORY_LIMIT};
 }
 async function historyCompare(relative,id){
   const current=await read(relative);
