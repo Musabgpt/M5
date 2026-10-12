@@ -50,6 +50,13 @@ export class IDEManager {
       cwd:this.workspace, env:environment, stdio:['ignore','ignore','ignore']
     });
     this.child.on('error', () => { this.child = null; });
+    let ready = false;
+    for (let tries = 0; tries < 32; tries++) {
+      if (!this.child || this.child.exitCode !== null) break;
+      if (await this.occupied()) { ready = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (!ready) throw new Error('code-server did not open a listening IDE; inspect Termux installation and runtime');
     return { installed:true, running:true, port:8778, target:'http://localhost:8778', requiresPassword:true, password };
   }
 }
