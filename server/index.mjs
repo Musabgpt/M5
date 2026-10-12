@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { AgentManager } from './agent.mjs';
+import { CheckpointStore } from './checkpoints.mjs';
 import { ROUTES } from './providers.mjs';
 import { workspacePath, safeCompare } from './security.mjs';
 import { enumerate, invokeTool } from './tools.mjs';
@@ -19,7 +20,8 @@ const tokenFile = path.join(state, 'session-token');
 if (!fs.existsSync(tokenFile)) await fsp.writeFile(tokenFile, crypto.randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' });
 const TOKEN = (await fsp.readFile(tokenFile, 'utf8')).trim();
 if (TOKEN.length < 48) throw new Error('Insecure server token');
-const agent = new AgentManager({ workspace });
+const checkpoints = new CheckpointStore({ workspace, state });
+const agent = new AgentManager({ workspace, checkpoints });
 const webRoot = path.resolve('web');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
@@ -94,10 +96,17 @@ export const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/search' && req.method === 'GET') return json(res, 200, await invokeTool(workspace, 'search_code', { query: ensureString(url.searchParams.get('q'), 180) }));
     if (url.pathname === '/api/file' && req.method === 'POST') {
       const input = await body(req);
-      return json(res, 200, await invokeTool(workspace, 'write_file', {
-        path: ensureString(input.path, 500), content: ensureString(input.content, 1_000_000),
-        ...(input.expectedHash === undefined ? {} : { expectedHash: ensureString(input.expectedHash, 100) })
-      }));
+      const relative = ensureString(input.path, 500);
+      // A direct editor save is a deliberate user action; snapshot before any mutation.
+      const args = { path: relative, content: ensureString(input.content, 1_000_000),
+        ...(input.expectedHash === undefined ? {} : { expectedHash: ensureString(input.expectedHash, 100) }) };
+      await checkpoints.capture('editor', relative);
+      return json(res, 200, await invokeTool(workspace, 'write_file', args));
+    }
+    if (url.pathname === '/api/checkpoints' && req.method === 'GET') return json(res, 200, { entries: await checkpoints.list() });
+    if (url.pathname === '/api/checkpoints/restore' && req.method === 'POST') {
+      const input = await body(req);
+      return json(res, 200, await checkpoints.restore(ensureString(input.id, 100), ensureString(input.expectedCurrentHash, 100)));
     }
     if (url.pathname === '/api/git/status' && req.method === 'GET') return json(res, 200, await invokeTool(workspace, 'git_status', {}));
     if (url.pathname === '/api/git/diff' && req.method === 'GET') return json(res, 200, await invokeTool(workspace, 'git_diff', {}));
