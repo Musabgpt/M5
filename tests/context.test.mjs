@@ -42,15 +42,14 @@ test('code index refresh detects edits and removals; agent code_context uses inj
   } finally { await fs.rm(root, { force:true, recursive:true }); }
 });
 
-test('Android source uses the official Termux result bundle contract', async () => {
+test('Android uses official Termux result fields without an HTTP server', async () => {
+  const bridge = await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/TermuxBridge.java', import.meta.url), 'utf8');
   const receiver = await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/TermuxResultReceiver.java', import.meta.url), 'utf8');
   const activity = await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/M5Activity.java', import.meta.url), 'utf8');
-  assert.match(receiver, /RESULT_BUNDLE\s*=\s*"result"/);
-  assert.match(receiver, /getBundleExtra\(RESULT_BUNDLE\)/);
-  assert.match(receiver, /getInt\("exitCode"/);
-  assert.match(receiver, /getInt\("err"/);
-  assert.match(receiver, /error == Activity\.RESULT_OK && exit == 0/);
-  assert.doesNotMatch(receiver, /getBundleExtra\("com\.termux\.RUN_COMMAND_RESULT"\)/);
-  assert.match(activity, /"com\.termux\.RUN_COMMAND_PENDING_INTENT"/);
-  assert.match(activity, /"com\.termux\.RUN_COMMAND_BACKGROUND", true/);
+  assert.match(bridge, /getBundleExtra\("result"\)/);
+  assert.match(bridge, /getInt\("exitCode"/);
+  assert.match(bridge, /getInt\("err"/);
+  assert.match(receiver, /TermuxBridge\.completed/);
+  assert.match(activity, /extends Activity/);
+  assert.doesNotMatch(activity, /new WebView/);
 });
