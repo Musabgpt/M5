@@ -22,6 +22,7 @@ public final class TermuxBridge {
     private static final ConcurrentHashMap<Integer, Callback> REQUESTS = new ConcurrentHashMap<>();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private final Activity activity;
+    private volatile boolean sessionReady=false;
 
     public interface Callback {
         void finished(JSONObject data);
@@ -29,6 +30,7 @@ public final class TermuxBridge {
     }
 
     TermuxBridge(Activity activity) { this.activity = activity; }
+    public boolean isConnected() { return sessionReady && readyForUse(); }
 
     public boolean readyForUse() {
         return activity.getPackageManager().getLaunchIntentForPackage("com.termux") != null
@@ -56,10 +58,19 @@ public final class TermuxBridge {
             + "&& git merge --ff-only FETCH_HEAD 1>&2 || true; fi; "
             + "test -f scripts/native-bridge.mjs; "
             + "node scripts/native-bridge.mjs ping";
-        execute(PREFIX + "bash", new String[]{"-lc", script}, callback, 120000);
+        sessionReady=false;
+        execute(PREFIX + "bash", new String[]{"-lc", script}, new Callback(){
+            @Override public void finished(JSONObject data){
+                sessionReady=data.optBoolean("ready",false);
+                if(sessionReady)callback.finished(data);
+                else callback.failed("Termux did not complete workspace initialization");
+            }
+            @Override public void failed(String message){sessionReady=false;callback.failed(message);}
+        }, 120000);
     }
 
     public void tool(String action, String[] arguments, Callback callback) {
+        if (!isConnected()) { callback.failed("Termux is offline. Use Connect Termux in the app header."); return; }
         if (!action.matches("ping|list|read|write|search|git_status|git_diff|shell")) {
             callback.failed("Unknown Termux action");
             return;
