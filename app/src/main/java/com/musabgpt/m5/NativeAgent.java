@@ -183,6 +183,42 @@ public final class NativeAgent {
             if(approved)execute.run();else observed(name,"DENIED by user");
         });
     }
+    private void runPhone(String name, JSONObject args) {
+        if("plan".equals(mode) && !"phone_apps".equals(name) && !"phone_observe".equals(name)) {
+            observed(name, "REJECTED: Plan mode cannot interact with the phone");
+            return;
+        }
+        if("phone_observe".equals(name) && !phone.accessibilityReady()) {
+            ui.log("Phone screen access is disabled. Enable M5 Accessibility in Android Settings.");
+            close("Blocked: opt-in phone accessibility is not enabled.");
+            return;
+        }
+        boolean readScreen="phone_observe".equals(name);
+        boolean confirm=(readScreen&&!consentedScreenRead)
+            ||(!readScreen&&!"phone_apps".equals(name));
+        Runnable execute=()->{
+            try {
+                JSONObject result=phone.run(name,args);
+                boolean ok=result.optBoolean("executed",false);
+                if(ok && !"phone_apps".equals(name)&&!"phone_observe".equals(name))phoneActions++;
+                observed(name,ok?result.toString():"NOT EXECUTED "+result.toString());
+            }catch(Exception error){
+                ui.log("Android "+name+" failed: "+error.getMessage());
+                observed(name,"ERROR "+error.getMessage());
+            }
+        };
+        if(!confirm){execute.run();return;}
+        String preview=readScreen
+            ? "Read visible foreground app labels and send them to the selected free model? Do not approve if sensitive information is visible."
+            : "Android action: "+name+"\n"+args.toString();
+        ui.requestApproval(readScreen?"Share screen labels with AI?":"Approve phone action?",preview,approved->{
+            if(!active||stopped)return;
+            if(!approved){observed(name,"DENIED by user");return;}
+            if(readScreen)consentedScreenRead=true;
+            execute.run();
+        });
+    }
+
     private boolean isValidation(String command){
         String text=command.trim().toLowerCase(Locale.ROOT);
         if(text.contains("||")||text.contains("&&")||text.contains(";")||text.contains("\n"))return false;
