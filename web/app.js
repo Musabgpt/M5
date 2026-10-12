@@ -44,6 +44,7 @@ async function openFile(path) {
     const file = await api('/api/file?path=' + encodeURIComponent(path));
     state.file = path; state.source = file.content; state.hash = file.sha256;
     $('editor').value = file.content;
+    window.M5Editor?.setFile(file.content, path);
     $('file-name').textContent = path; $('tab-label').textContent = path;
     $('dirty-dot').textContent = ''; $('editor').scrollTop = 0;
     updateLines(); panel('files'); await loadFiles(); notice('Opened ' + path);
@@ -221,6 +222,11 @@ $('approve').onclick = () => decision(true);
 $('deny').onclick = () => decision(false);
 $('agent-stop').onclick = async () => { if (state.jobId) { await post('/api/agent/' + state.jobId + '/stop'); await updateJob(); } };
 (async () => {
+  import('/editor.bundle.js').then(module => {
+    window.M5Editor = module.attachEditor({ textarea: $('editor'), host: document.querySelector('.editor-shell'), lineNumbers: $('line-numbers') });
+    if (state.file) window.M5Editor.setFile($('editor').value, state.file);
+    notice('CodeMirror 6 loaded · language-aware editor');
+  }).catch(() => { /* Offline / no npm build: editable textarea remains. */ });
   try {
     const status = await api('/api/status');
     $('workspace-path').textContent = status.workspace;
