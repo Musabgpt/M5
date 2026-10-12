@@ -925,7 +925,7 @@ public final class M5Activity extends Activity {
                         @Override public void finished(JSONObject result){
                             new AlertDialog.Builder(M5Activity.this)
                                 .setTitle(result.optBoolean("pageAvailable")?"CDP DOM observation":"CDP has no page target")
-                                .setMessage(result.toString(2))
+                                .setMessage(result.toString())
                                 .setPositiveButton("OK",null).show();
                         }
                         @Override public void failed(String error){showError("Browser CDP unavailable",error);}
