@@ -2,22 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-test('Android starts only the auditable Termux bootstrap script and honors the official result contract', async () => {
-  const activity = await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/M5Activity.java', import.meta.url), 'utf8');
-  const receiver = await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/TermuxResultReceiver.java', import.meta.url), 'utf8');
-  assert.match(activity, /scripts\/termux-bootstrap\.sh/);
-  assert.doesNotMatch(activity, /nohup node server\/index\.mjs/);
-  assert.match(receiver, /getBundleExtra\(RESULT_BUNDLE\)/);
-  assert.match(receiver, /exit == 0/);
+test('native Termux setup ships within APK; never clones GitHub or starts HTTP server',async()=>{
+  const java=await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/TermuxBridge.java',import.meta.url),'utf8');
+  const asset=await fs.readFile(new URL('../app/src/main/assets/native-bridge.mjs',import.meta.url),'utf8');
+  const script=await fs.readFile(new URL('../scripts/native-bridge.mjs',import.meta.url),'utf8');
+  assert.equal(asset,script,'APK-bundled and source one-shot bridge must remain identical');
+  assert.match(java,/getAssets\(\)\.open\("native-bridge\.mjs"\)/);
+  assert.match(java,/Base64\.encodeToString/);
+  assert.match(java,/base64 -d/);
+  assert.match(java,/native-bridge\.mjs\.m5new/);
+  assert.match(java,/RUN_COMMAND_BACKGROUND", true/);
+  assert.doesNotMatch(java,/git clone|git fetch|git merge|nohup|server\/index\.mjs|http:\/\/127\.0\.0\.1/);
 });
-test('Bootstrap requires a confirmed local M5 health reply before pairing', async () => {
-  const source = await fs.readFile(new URL('../scripts/termux-bootstrap.sh', import.meta.url), 'utf8');
-  assert.match(source, /127\.0\.0\.1:8765\/health/);
-  assert.match(source, /v\.name==="M5"/);
-  assert.match(source, /check_engine \|\|/);
-  assert.match(source, /M5_PORT_CONFLICT/);
-  assert.match(source, /git merge --ff-only/);
-  assert.match(source, /m5-workspace/);
-  assert.doesNotMatch(source, /git reset --hard|git clean -fd|rm -rf/);
-  assert.match(source, /printf 'M5_PAIR=%s\\n'/);
+test('native Termux result validates errors before delivering JSON',async()=>{
+  const java=await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/TermuxBridge.java',import.meta.url),'utf8');
+  assert.match(java,/getBundleExtra\("result"\)/);
+  assert.match(java,/getInt\("exitCode"/);
+  assert.match(java,/getInt\("err"/);
+  assert.match(java,/stdout_original_length/);
+  assert.match(java,/new JSONObject\(stdout\.trim\(\)\)/);
+  assert.match(java,/toolFailure\.optString\("error"/);
 });
