@@ -195,6 +195,7 @@ public final class M5Activity extends Activity {
         LinearLayout actions=horizontal();
         actions.addView(button("Refresh",()->requireTermux(this::refreshFiles)),new LinearLayout.LayoutParams(0,dp(48),1));
         actions.addView(button("New file",()->requireTermux(this::newFile)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(selectedFile.isEmpty())actions.addView(button("New project",()->requireTermux(this::newProject)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(actions);
         if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
@@ -247,6 +248,39 @@ public final class M5Activity extends Activity {
                 if(editor!=null)editor.setText("");
             }).show();
     }
+    private void newProject(){
+        LinearLayout dialog=vertical();
+        dialog.setPadding(dp(20),dp(10),dp(20),dp(5));
+        EditText project=input("Name e.g. Calculator2026",1);
+        project.setSingleLine(true);
+        dialog.addView(project);
+        final String[] presets={"HTML calculator (offline)","Python starter","Node.js starter"};
+        Spinner pick=new Spinner(this);
+        pick.setAdapter(spinnerAdapter(presets));
+        dialog.addView(pick);
+        new AlertDialog.Builder(this).setTitle("Create a real project")
+            .setMessage("Writes project files into Termux private workspace. No paid model or cloud required.")
+            .setView(dialog).setNegativeButton("Cancel",null)
+            .setPositiveButton("Create",(ignored,which)->{
+                String name=project.getText().toString().trim();
+                if(!name.matches("[A-Za-z][A-Za-z0-9_-]{1,35}")){
+                    showError("Invalid name","Use 2–36 letters, numbers, hyphens or underscores; begin with a letter.");
+                    return;
+                }
+                String preset=new String[]{"web-calculator","python","node"}[pick.getSelectedItemPosition()];
+                termux.tool("scaffold",new String[]{name,preset},new TermuxBridge.Callback(){
+                    @Override public void finished(JSONObject result){
+                        String files=result.optJSONArray("files")==null?"":result.optJSONArray("files").toString();
+                        new AlertDialog.Builder(M5Activity.this).setTitle("Project created")
+                            .setMessage("Project: "+result.optString("project")+"\nValidation: "+result.optString("verification")+"\nFiles: "+files)
+                            .setPositiveButton("Open files",(d,w)->{selectedFile="";showPanel("files");})
+                            .show();
+                    }
+                    @Override public void failed(String error){showError("Project not created",error);}
+                });
+            }).show();
+    }
+
     private void saveFile(){
         if(editor==null||selectedFile.isEmpty())return;
         String data=editor.getText().toString();
