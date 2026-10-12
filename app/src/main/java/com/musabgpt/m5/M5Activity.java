@@ -407,10 +407,38 @@ public final class M5Activity extends Activity {
             @Override public void failed(String message){showError("Explorer",message);}
         });
     }
+    private void auditProject(String relative){
+        termux.tool("audit_project",new String[]{relative},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject data){
+                JSONArray rows=data.optJSONArray("results");
+                StringBuilder report=new StringBuilder();
+                report.append("Syntax audit · ").append(data.optString("project","workspace"))
+                    .append("\nPassed ").append(data.optInt("passed")).append("/")
+                    .append(data.optInt("checked")).append("\n");
+                if(data.optBoolean("limited"))report.append("Only first 12 eligible source files checked.\n");
+                if(rows!=null)for(int i=0;i<rows.length();i++){
+                    JSONObject result=rows.optJSONObject(i);
+                    if(result==null)continue;
+                    report.append("\n").append(result.optBoolean("success")?"✓ ":"✕ ")
+                        .append(result.optString("path",""))
+                        .append(result.optString("error","").isEmpty()?"":"\n"+result.optString("error",""));
+                }
+                report.append("\n\nSyntax audit does not prove runtime correctness.");
+                String output=report.toString();
+                if(output.length()>5000)output=output.substring(0,5000)+"\n[Clipped]";
+                new AlertDialog.Builder(M5Activity.this)
+                    .setTitle(data.optInt("failed")>0?"Project issues found":"Project syntax audit")
+                    .setMessage(output).setPositiveButton("OK",null).show();
+            }
+            @Override public void failed(String error){showError("Project audit failed",error);}
+        });
+    }
+
     private void exportProjectDialog(String relative){
         new AlertDialog.Builder(this).setTitle("Folder: "+relative)
             .setMessage("Export source files from this folder to a ZIP file on your phone. No network is used.")
             .setNegativeButton("Cancel",null)
+            .setNeutralButton("Audit syntax",(d,w)->auditProject(relative))
             .setPositiveButton("Export ZIP",(d,w)->{
                 pendingExportProject=relative;
                 Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
