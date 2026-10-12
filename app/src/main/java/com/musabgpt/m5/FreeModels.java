@@ -149,7 +149,7 @@ public final class FreeModels {
                         catch(ProviderError problem){
                             throw new MeshFailover.Failure(problem.code,problem.retryAfterMs,
                                 problem.code==502||problem.code==503||problem.code==504);
-                        }catch(SocketTimeoutException|ConnectException|UnknownHostException|SocketException exception){
+                        }catch(SocketTimeoutException|UnknownHostException|SocketException exception){
                             throw new MeshFailover.Failure(0,0,true);
                         }catch(InterruptedIOException exception){
                             throw new MeshFailover.Failure(0,0,true);
