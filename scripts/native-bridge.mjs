@@ -152,10 +152,15 @@ async function command(value,timeout=30000) {
  * selected workspace file. No shell interpolation. Running code can still
  * access the Termux user's files/network; the Android UI requires consent.
  */
-async function sourceCommand(mode,relative){
+async function sourceCommand(mode,relative,expectedHash,timeoutOverride){
   const filename=await target(relative);
   const stat=await fs.stat(filename);
   if(!stat.isFile()||stat.size>MAX_FILE)fail('Select a regular text source file smaller than 40 KB');
+  if(mode==='run' && !/^[0-9a-f]{64}$/.test(expectedHash||''))fail('Run requires a read-backed SHA-256 content hash');
+  if(expectedHash){
+    if(!/^[0-9a-f]{64}$/.test(expectedHash))fail('Invalid source content hash');
+    if(sha(await fs.readFile(filename))!==expectedHash)fail('Source file changed since last read; reload before executing');
+  }
   const ext=path.extname(filename).toLowerCase();
   let commandName,args;
   if(ext==='.js'||ext==='.mjs'||ext==='.cjs'){
@@ -174,7 +179,7 @@ async function sourceCommand(mode,relative){
   const env=Object.fromEntries(
     ['PATH','HOME','TMPDIR','LANG','TERM'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])
   );
-  const timeout=mode==='check'?15000:30000;
+  const timeout=timeoutOverride|| (mode==='check'?15000:30000);
   return await new Promise((resolve,reject)=>{
     let stdout='',stderr='',truncated=false,timedOut=false,finished=false;
     const child=spawn(commandName,args,{cwd,env,stdio:['ignore','pipe','pipe']});
@@ -196,6 +201,31 @@ async function sourceCommand(mode,relative){
   });
 }
 
+/**
+ * Bounded, source-only project audit. Does not execute application logic.
+ * Project source is parsed by language runtimes; results show real exit codes.
+ */
+async function auditProject(project){
+  const listResult=await list(project);
+  const candidates=listResult.files
+    .filter(f=>f.type==='file' && /\.(?:js|mjs|cjs|py|sh)$/.test(f.path));
+  const sample=candidates.slice(0,12);
+  const results=[];
+  for(const file of sample){
+    try{
+      const found=await sourceCommand('check',file.path,undefined,4000);
+      results.push({path:file.path,success:found.success,exitCode:found.exitCode,
+        error:found.stderr.slice(0,550),timedOut:found.timedOut});
+    }catch(e){
+      results.push({path:file.path,success:false,error:String(e.message||e).slice(0,450)});
+    }
+  }
+  const passed=results.filter(x=>x.success).length;
+  return {project,checked:results.length,passed,failed:results.length-passed,
+    limited:listResult.limited||candidates.length>sample.length,
+    results,note:'Syntax checks only; not a unit-test suite or proof of runtime correctness'};
+}
+
 async function main(){
   await fs.mkdir(ROOT,{recursive:true,mode:0o700});
   const [verb,...args]=process.argv.slice(2);
@@ -203,8 +233,9 @@ async function main(){
   switch(verb){
     case 'ping':data={ready:true,runtime:'native-termux',root:ROOT};break;
     case 'scaffold':data=await scaffoldProject(args[0],args[1]);break;
-    case 'check_file':data=await sourceCommand('check',args[0]);break;
-    case 'run_file':data=await sourceCommand('run',args[0]);break;
+    case 'check_file':data=await sourceCommand('check',args[0],args[1]);break;
+    case 'audit_project':data=await auditProject(args[0]||'');break;
+    case 'run_file':data=await sourceCommand('run',args[0],args[1]);break;
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
     case 'write':data=await write(args[0],args[1],args[2]);break;

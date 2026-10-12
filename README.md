@@ -63,3 +63,17 @@ This version installs side by side as `com.musabgpt.m5.studio6` (**M5 Studio 0.6
 Usage: install the debug APK from the successful Android Actions workflow on PR #4, connect Termux, create a project or open source in Files, **Save**, then **Check** or **Run file**. For HTML projects, check the included `app.js`; HTML browser rendering still requires a browser.
 
 Not implemented: a full VS Code language server, interactive PTY, reliable phone automation across all applications, production-grade project builds, semantic autocomplete, or persistent multi-agent execution. A passing Android CI build does not establish physical Samsung acceptance.
+
+
+## M5 Native Studio 0.7 — reliability release
+
+**Development branch:** `feat/native-studio-v07-resilience`. **Separate Android app:** `com.musabgpt.m5.studio7` (M5 Studio 0.7), installed alongside earlier M5 previews without replacing them.
+
+- **Encrypted draft recovery:** edits to local source are stored in app-private AES-256-GCM records using Android Keystore, with a short 700 ms debounce and a synchronous save on Android pause. A **Drafts** button shows up to 12 recoverable source drafts, max 40 KB each. Recovery works even if Termux is offline, but saving to the actual project requires Termux.
+- **Disk version safety:** opening another source no longer associates the first source's draft with the wrong path. Asynchronous read/write callbacks track which file they belong to. When the source on disk differs from the hash at which an unsaved draft began, M5 presents an explicit conflict choice before showing the draft. External modifications are not silently overwritten.
+- **Safer code execution:** native Check/Run actions and the agent's `run_file` now require an exact SHA-256 revision for execution; the one-shot Termux bridge rejects stale files. Source execution still has the Termux user's privileges and requires explicit approval.
+- **Project-wide syntax audit:** tap a folder in Files, then **Audit syntax**. This checks up to 12 JS/Python/Shell files, reports actual parser exit results, and never treats syntax checks as runtime/functional testing. Each check is bounded to 4 seconds.
+- **Improved phone layout:** Files toolbar actions scroll horizontally, instead of squeezing multiple controls into a tiny row. The number of stored drafts is shown in Files.
+- **Testing:** unit tests cover recovery decisions and SHA-256 freshness, while integration tests run the Termux project syntax audit on valid/invalid source, cap the file count, prevent path escapes, and ensure the JS bridge shipped in the APK matches the audited source.
+
+**Limitations:** Drafts are preserved while the same app installation remains installed and the device's Android Keystore key is available. Uninstalling an APK also deletes its private drafts; a different debug app ID does not automatically import drafts from previous installations. The last sub-second of edits may be lost on sudden power failure before the debounce is committed. For long-term security, manually save or export your actual project. No guarantee of physical Samsung behavior from CI; device testing is still required. Free provider quotas remain limited, and full Cursor-level language servers/PTY/extensions are still unfinished.

@@ -10,6 +10,10 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.text.InputType;
 import android.util.Base64;
 import android.util.TypedValue;
@@ -56,6 +60,11 @@ public final class M5Activity extends Activity {
     private NativeAgent agent;
     private boolean connected=false,agentActive=false;
     private String selectedFile="",originalHash="",lastSavedContent="";
+    private String editorFile="";
+    private int fileOpenRequest=0;
+    private DraftVault draftVault;
+    private final Handler autosaveHandler=new Handler(Looper.getMainLooper());
+    private final Runnable autosaveTask=()->persistVisibleDraft();
     private final Map<String,String> unsavedDrafts=new LinkedHashMap<>();
     private EditText editor,agentInput;
     private LinearLayout chatLog;
@@ -67,6 +76,7 @@ public final class M5Activity extends Activity {
         super.onCreate(saved);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
+        draftVault=new DraftVault(this);
         termux=new TermuxBridge(this);
         exporter=new ProjectExporter(this,termux);
         models=new FreeModels(this);
@@ -97,6 +107,16 @@ public final class M5Activity extends Activity {
         buildShell();
         showPanel("files");
         // App renders natively even when Termux is missing; no fake connected state.
+    }
+
+    @Override protected void onPause(){
+        persistVisibleDraft();
+        super.onPause();
+    }
+    @Override protected void onDestroy(){
+        autosaveHandler.removeCallbacks(autosaveTask);
+        persistVisibleDraft();
+        super.onDestroy();
     }
 
     private int dp(float n) {return (int)(getResources().getDisplayMetrics().density*n+.5f);}
@@ -150,7 +170,7 @@ public final class M5Activity extends Activity {
             return insets;
         });
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
-        TextView logo=label("M5 STUDIO 0.6",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
+        TextView logo=label("M5 STUDIO 0.7",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
         connection=label("↻ Connect Termux",13,ACCENT);
         connection.setContentDescription("Connect M5 to Termux tools");
@@ -225,44 +245,85 @@ public final class M5Activity extends Activity {
         if(connected)action.run();
         else showError("Termux not connected","Tap ↻ Termux in the top bar to start direct command access. The editor is native and does not depend on localhost.");
     }
+    private void persistVisibleDraft(){
+        if(editor==null||editorFile.isEmpty())return;
+        String path=editorFile;
+        String contents=editor.getText().toString();
+        try {
+            if(contents.equals(lastSavedContent)){
+                unsavedDrafts.remove(path);
+                draftVault.remove(path);
+            }else{
+                unsavedDrafts.put(path,contents);
+                draftVault.put(path,contents,originalHash);
+            }
+        }catch(Exception error){
+            toast("Draft not saved to disk: "+error.getMessage());
+        }
+    }
     private void rememberDraft(){
-        if(!"files".equals(activePanel)||selectedFile.isEmpty()||editor==null)return;
-        if(editor.getParent()==null)return;
-        String now=editor.getText().toString();
-        if(now.equals(lastSavedContent))unsavedDrafts.remove(selectedFile);
-        else unsavedDrafts.put(selectedFile,now);
+        autosaveHandler.removeCallbacks(autosaveTask);
+        if(editor==null||editorFile.isEmpty())return;
+        persistVisibleDraft();
         editor=null;
+        editorFile="";
+    }
+    private void showSavedDrafts(){
+        try{
+            ArrayList<String> paths=draftVault.paths();
+            if(paths.isEmpty()){showError("Saved drafts","No unsaved drafts stored.");return;}
+            new AlertDialog.Builder(this).setTitle("Recover encrypted drafts")
+                .setItems(paths.toArray(new String[0]),(dialog,index)->{
+                    String path=paths.get(index);
+                    if(connected){openFile(path);return;}
+                    try{
+                        DraftVault.Draft draft=draftVault.get(path);
+                        if(draft==null)return;
+                        rememberDraft();
+                        selectedFile=path;
+                        originalHash=draft.savedHash;
+                        lastSavedContent="";
+                        unsavedDrafts.put(path,draft.contents);
+                        showPanel("files");
+                    }catch(Exception error){showError("Cannot recover draft",error.getMessage());}
+                }).setNegativeButton("Close",null).show();
+        }catch(Exception error){showError("Draft recovery",error.getMessage());}
     }
     private void sourceAction(boolean execute){
         if(selectedFile.isEmpty()||editor==null)return;
-        String text=editor.getText().toString();
-        if(originalHash.isEmpty()||!text.equals(lastSavedContent)){
+        final String path=editorFile;
+        final String savedHash=originalHash;
+        final String currentText=editor.getText().toString();
+        if(savedHash.isEmpty()||!currentText.equals(lastSavedContent)){
             showError("Save before "+(execute?"running":"checking"),
-                "There are unsaved changes. Save this file first; the tool must check the exact version on disk.");
+                "There are unsaved changes. Save first to avoid checking stale source.");
             return;
         }
         requireTermux(()->{
-            Runnable job=()->termux.tool(execute?"run_file":"check_file",
-                new String[]{selectedFile},new TermuxBridge.Callback(){
-                @Override public void finished(JSONObject observed){
-                    boolean success=observed.optBoolean("success",false);
-                    String title=(execute?"Run":"Syntax check")+(success?" ✓":" — failed");
-                    String output="File: "+observed.optString("file",selectedFile)+
-                        "\nExit code: "+observed.optString("exitCode","unknown")+
-                        "\nTimed out: "+observed.optBoolean("timedOut")+
-                        "\n\n"+observed.optString("stdout","")+
-                        "\n"+observed.optString("stderr","");
-                    if(output.length()>6000)output=output.substring(0,6000)+"\n[Output clipped]";
-                    new AlertDialog.Builder(M5Activity.this)
-                        .setTitle(title).setMessage(output)
-                        .setPositiveButton("OK",null).show();
+            Runnable job=()->{
+                if(!path.equals(editorFile)||!savedHash.equals(originalHash)){
+                    showError("Execution cancelled","The open file changed after you requested this action.");
+                    return;
                 }
-                @Override public void failed(String error){showError("Execution not started",error);}
-            });
+                termux.tool(execute?"run_file":"check_file",
+                    new String[]{path,savedHash},new TermuxBridge.Callback(){
+                    @Override public void finished(JSONObject observed){
+                        boolean success=observed.optBoolean("success",false);
+                        String title=(execute?"Run":"Syntax check")+(success?" ✓":" — failed");
+                        String output="File: "+observed.optString("file",path)+
+                            "\nExit code: "+observed.optString("exitCode","unknown")+
+                            "\nTimed out: "+observed.optBoolean("timedOut")+
+                            "\n\n"+observed.optString("stdout","")+"\n"+observed.optString("stderr","");
+                        if(output.length()>6000)output=output.substring(0,6000)+"\n[Output clipped]";
+                        new AlertDialog.Builder(M5Activity.this).setTitle(title)
+                            .setMessage(output).setPositiveButton("OK",null).show();
+                    }
+                    @Override public void failed(String error){showError("Execution not started",error);}
+                });
+            };
             if(!execute){job.run();return;}
-            new AlertDialog.Builder(this).setTitle("Run this source file?")
-                .setMessage("Run "+selectedFile+" with your Termux permissions?\n\n"
-                +"Source files can access the network and your Termux data. Run only trusted code.")
+            new AlertDialog.Builder(this).setTitle("Run "+path+"?")
+                .setMessage("This source will run with your Termux user's permissions. M5 checks that the file hash still matches the approved version. Only run trusted code.")
                 .setNegativeButton("Cancel",null)
                 .setPositiveButton("Run once",(d,w)->job.run()).show();
         });
@@ -275,9 +336,25 @@ public final class M5Activity extends Activity {
         actions.addView(button("New file",()->requireTermux(this::newFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("New project",()->requireTermux(this::newProject)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("Search",()->requireTermux(this::searchWorkspace)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(selectedFile.isEmpty())actions.addView(button("Drafts",this::showSavedDrafts),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
-        body.addView(actions);
-        if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
+        // Use horizontally scrollable full-size actions, not cramped 0-width weighted buttons.
+        for(int i=0;i<actions.getChildCount();i++){
+            View item=actions.getChildAt(i);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(106),dp(45));
+            lp.setMargins(dp(3),dp(2),dp(3),dp(2));
+            item.setLayoutParams(lp);
+        }
+        HorizontalScrollView fileActions=new HorizontalScrollView(this);
+        fileActions.setHorizontalScrollBarEnabled(false);
+        fileActions.addView(actions);
+        body.addView(fileActions);
+        if(selectedFile.isEmpty()&&draftVault.count()>0)
+            info("Recovered drafts available: "+draftVault.count()+" · Open Drafts to restore");
+        if(!connected){
+            info("Offline editing: encrypted drafts are available. Connect Termux to save, run or browse project files.");
+            if(selectedFile.isEmpty())return;
+        }
         if(!selectedFile.isEmpty()) {
             LinearLayout work=horizontal();
             work.addView(button("Check",()->sourceAction(false)),new LinearLayout.LayoutParams(0,dp(42),1));
@@ -287,9 +364,18 @@ public final class M5Activity extends Activity {
             source.setHint("Write your source code here");
             source.setFilename(selectedFile);
             editor=source;
+            editorFile=selectedFile;
             editor.setMinLines(10);
             editor.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
             editor.setText(unsavedDrafts.containsKey(selectedFile)?unsavedDrafts.get(selectedFile):lastSavedContent);
+            editor.addTextChangedListener(new TextWatcher(){
+                @Override public void beforeTextChanged(CharSequence text,int start,int count,int after){}
+                @Override public void onTextChanged(CharSequence text,int start,int before,int count){}
+                @Override public void afterTextChanged(Editable value){
+                    autosaveHandler.removeCallbacks(autosaveTask);
+                    autosaveHandler.postDelayed(autosaveTask,700);
+                }
+            });
             body.addView(editor,new LinearLayout.LayoutParams(-1,0,1));
             body.addView(button("Explorer · keep draft",()->{
                 rememberDraft();
@@ -321,10 +407,38 @@ public final class M5Activity extends Activity {
             @Override public void failed(String message){showError("Explorer",message);}
         });
     }
+    private void auditProject(String relative){
+        termux.tool("audit_project",new String[]{relative},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject data){
+                JSONArray rows=data.optJSONArray("results");
+                StringBuilder report=new StringBuilder();
+                report.append("Syntax audit · ").append(data.optString("project","workspace"))
+                    .append("\nPassed ").append(data.optInt("passed")).append("/")
+                    .append(data.optInt("checked")).append("\n");
+                if(data.optBoolean("limited"))report.append("Only first 12 eligible source files checked.\n");
+                if(rows!=null)for(int i=0;i<rows.length();i++){
+                    JSONObject result=rows.optJSONObject(i);
+                    if(result==null)continue;
+                    report.append("\n").append(result.optBoolean("success")?"✓ ":"✕ ")
+                        .append(result.optString("path",""))
+                        .append(result.optString("error","").isEmpty()?"":"\n"+result.optString("error",""));
+                }
+                report.append("\n\nSyntax audit does not prove runtime correctness.");
+                String output=report.toString();
+                if(output.length()>5000)output=output.substring(0,5000)+"\n[Clipped]";
+                new AlertDialog.Builder(M5Activity.this)
+                    .setTitle(data.optInt("failed")>0?"Project issues found":"Project syntax audit")
+                    .setMessage(output).setPositiveButton("OK",null).show();
+            }
+            @Override public void failed(String error){showError("Project audit failed",error);}
+        });
+    }
+
     private void exportProjectDialog(String relative){
         new AlertDialog.Builder(this).setTitle("Folder: "+relative)
             .setMessage("Export source files from this folder to a ZIP file on your phone. No network is used.")
             .setNegativeButton("Cancel",null)
+            .setNeutralButton("Audit syntax",(d,w)->auditProject(relative))
             .setPositiveButton("Export ZIP",(d,w)->{
                 pendingExportProject=relative;
                 Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -356,15 +470,61 @@ public final class M5Activity extends Activity {
         });
     }
 
-    private void openFile(String path) {
+    private void openFile(String path){
+        int request=++fileOpenRequest;
         termux.tool("read",new String[]{path},new TermuxBridge.Callback(){
             @Override public void finished(JSONObject file){
-                selectedFile=path;originalHash=file.optString("hash","");
-                lastSavedContent=file.optString("content","");
-                showPanel("files");
+                if(request!=fileOpenRequest||!"files".equals(activePanel))return;
+                loadEditor(path,file.optString("hash",""),file.optString("content",""));
             }
-            @Override public void failed(String message){showError("Open file",message);}
+            @Override public void failed(String error){
+                if(request!=fileOpenRequest)return;
+                try{
+                    DraftVault.Draft draft=draftVault.get(path);
+                    if(draft!=null&&error.contains("ENOENT")) {
+                        loadEditor(path,"","");
+                        return;
+                    }
+                }catch(Exception ignored){}
+                showError("Open file",error);
+            }
         });
+    }
+    private void loadEditor(String path,String hash,String diskContent){
+        rememberDraft();
+        selectedFile=path;
+        originalHash=hash;
+        lastSavedContent=diskContent;
+        try{
+            DraftVault.Draft draft=draftVault.get(path);
+            DraftRecoveryPolicy.Decision recovery=DraftRecoveryPolicy.evaluate(
+                draft==null?null:draft.contents,draft==null?null:draft.savedHash,diskContent,hash);
+            if(recovery==DraftRecoveryPolicy.Decision.NO_DRAFT||
+                recovery==DraftRecoveryPolicy.Decision.DISCARD_REDUNDANT){
+                unsavedDrafts.remove(path);
+                if(draft!=null)draftVault.remove(path);
+                showPanel("files");return;
+            }
+            if(recovery==DraftRecoveryPolicy.Decision.CONFLICT){
+                new AlertDialog.Builder(this)
+                    .setTitle("File changed since draft was saved")
+                    .setMessage("This draft is based on another version of the file. Choose which version to edit. Restoring the draft will NOT save it to the project automatically.")
+                    .setNegativeButton("Use disk version",(d,w)->{
+                        unsavedDrafts.remove(path);
+                        try{draftVault.remove(path);}catch(Exception ignored){}
+                        showPanel("files");
+                    })
+                    .setPositiveButton("Review recovered draft",(d,w)->{
+                        unsavedDrafts.put(path,draft.contents);
+                        showPanel("files");
+                    }).show();
+                return;
+            }
+            unsavedDrafts.put(path,draft.contents);
+        }catch(Exception error){
+            showError("Draft recovery error","Disk file was not changed: "+error.getMessage());
+        }
+        showPanel("files");
     }
     private void newFile(){
         EditText name=input("Relative filename: e.g. main.py",1);
@@ -372,9 +532,8 @@ public final class M5Activity extends Activity {
             .setView(name).setNegativeButton("Cancel",null).setPositiveButton("Create",(d,w)->{
                 String path=name.getText().toString().trim();
                 if(path.isEmpty()){showError("File name","Enter a path.");return;}
-                selectedFile=path;originalHash="";lastSavedContent="";
-                unsavedDrafts.remove(path);
-                showPanel("files");
+                ++fileOpenRequest;
+                loadEditor(path,"","");
             }).show();
     }
     private void searchWorkspace(){
@@ -449,19 +608,42 @@ public final class M5Activity extends Activity {
 
     private void saveFile(){
         if(editor==null||selectedFile.isEmpty())return;
-        String data=editor.getText().toString();
-        if(data.getBytes(StandardCharsets.UTF_8).length>40000){showError("Save","The direct bridge supports source files up to 40KB.");return;}
-        String encoded=Base64.encodeToString(data.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
+        final String path=editorFile;
+        final String contents=editor.getText().toString();
+        final String expectedHash=originalHash;
+        if(contents.getBytes(StandardCharsets.UTF_8).length>40000){
+            showError("Save","Source file exceeds 40 KB. No files were changed.");return;
+        }
+        String encoded=Base64.encodeToString(contents.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
         status("● Saving…");
-        termux.tool("write",new String[]{selectedFile,encoded,originalHash},new TermuxBridge.Callback(){
-            @Override public void finished(JSONObject result){
-                originalHash=result.optString("hash",originalHash);
-                lastSavedContent=data;
-                if(editor!=null && data.equals(editor.getText().toString()))unsavedDrafts.remove(selectedFile);
+        termux.tool("write",new String[]{path,encoded,expectedHash},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject receipt){
+                String newHash=receipt.optString("hash","");
+                if(newHash.isEmpty()){
+                    showError("Save not verified","Termux did not confirm the content hash");
+                    return;
+                }
+                if(path.equals(selectedFile)){
+                    originalHash=newHash;
+                    lastSavedContent=contents;
+                    if(editor!=null && path.equals(editorFile) &&
+                        !contents.equals(editor.getText().toString())){
+                        persistVisibleDraft();
+                    }else if(!unsavedDrafts.containsKey(path)||
+                        contents.equals(unsavedDrafts.get(path))){
+                        unsavedDrafts.remove(path);
+                        try{draftVault.remove(path);}catch(Exception error){
+                            toast("File saved; encrypted draft cleanup failed");
+                        }
+                    }
+                }
                 status("● Termux ready");
-                toast("Saved "+selectedFile);
+                toast("Saved "+path);
             }
-            @Override public void failed(String error){status("● Save blocked");showError("File not saved",error);}
+            @Override public void failed(String error){
+                status("● Save blocked");
+                showError("File not saved",error);
+            }
         });
     }
     private void showAgent(){
