@@ -18,21 +18,24 @@ public final class NativeAgent {
     public interface Decision { void decided(boolean approved); }
 
     private final TermuxBridge termux;
+    private final PhoneTools phone;
     private final FreeModels models;
     private final Screen ui;
     private final JSONArray messages=new JSONArray();
-    private int family=0,steps=0,writes=0,validations=0;
+    private int family=0,steps=0,writes=0,validations=0,phoneActions=0;
     private String mode="plan";
     private boolean stopped=false,active=false,requiresAction=false;
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     private int taskGeneration=0;
+    private boolean consentedScreenRead=false;
 
     private static final String SYSTEM =
       "You are M5, an Android coding agent with REAL workspace tools. "
     + "Project workspace is controlled by Termux with explicit user consent. "
     + "Available tools: list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
-    + "git_status {}, git_diff {}, finish {summary}. "
+    + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
+    + "phone_click {id}, phone_type {id,text}, phone_scroll {id,direction}, phone_back {}, phone_home {}, finish {summary}. "
     + "For tool use respond with ONLY JSON {\"tool_calls\":[{\"name\":\"read_file\",\"arguments\":{\"path\":\"app.py\"}}]}. "
     + "ONE tool call at a time. For ordinary greetings, answer in plain text WITHOUT calling tools. "
     + "Do not ask for termux-setup-storage: private workspace files need no shared storage permission. "
@@ -42,14 +45,14 @@ public final class NativeAgent {
     + "Always run a real verification command after the last code edit. "
     + "Otherwise report that verification is blocked. Reply in the user's language.";
 
-    NativeAgent(TermuxBridge termux,FreeModels models,Screen ui){
-        this.termux=termux;this.models=models;this.ui=ui;
+    NativeAgent(TermuxBridge termux,FreeModels models,PhoneTools phone,Screen ui){
+        this.termux=termux;this.models=models;this.phone=phone;this.ui=ui;
     }
 
     void start(String goal,int selectedFamily,String requestedMode) {
         if(active){ui.log("Another task is already running.");return;}
         taskGeneration++;
-        active=true;stopped=false;steps=0;writes=0;validations=0;
+        active=true;stopped=false;steps=0;writes=0;validations=0;phoneActions=0;consentedScreenRead=false;
         family=selectedFamily;mode=requestedMode;
         requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل).*");
         if("agent".equals(mode) && requiresAction && !termux.isConnected()) {
@@ -102,7 +105,7 @@ public final class NativeAgent {
         if(call==null) {
             ui.log(text.length()>5000?text.substring(0,5000):text);
             close(writes>0&&validations==0 ? "Blocked: edited files were not verified."
-              : (requiresAction && writes==0 && validations==0 && "agent".equals(mode)
+              : (requiresAction && writes==0 && validations==0 && phoneActions==0 && "agent".equals(mode)
                   ? "Blocked: no real project action was observed." : "Response complete."));
             return;
         }
@@ -123,12 +126,13 @@ public final class NativeAgent {
         if("finish".equals(name)){
             String summary=args.optString("summary","Task ended without a summary.");
             ui.log(summary);
-            close(writes>0&&validations==0?"Blocked: no successful verification after last edit.":(requiresAction && writes==0 && validations==0 && "agent".equals(mode) ? "Blocked: no real action was observed." : "Agent finished."));
+            close(writes>0&&validations==0?"Blocked: no successful verification after last edit.":(requiresAction && writes==0 && validations==0 && phoneActions==0 && "agent".equals(mode) ? "Blocked: no real action was observed." : "Agent finished."));
             return;
         }
         if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff")){
             observed(name,"REJECTED: unregistered tool");return;
         }
+        if(name.startsWith("phone_")){runPhone(name,toolArgs);return;}
         final boolean modifying=name.equals("write_file")||name.equals("run_command");
         if(!termux.isConnected()) {
             ui.log("Termux is not connected. No project tool was executed.");
