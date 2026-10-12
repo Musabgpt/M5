@@ -15,5 +15,8 @@ public class LocalIntentsTest {
         assertNull(LocalIntents.appToOpen("مرحبا"));
         assertNull(LocalIntents.appToOpen("أريد برنامج حاسبة"));
         assertNull(LocalIntents.appToOpen("افتح https://example.com"));
+        assertEquals("https://example.com",LocalIntents.urlToOpen("افتح https://example.com"));
+        assertNull(LocalIntents.urlToOpen("افتح http://insecure.example"));
+        assertNull(LocalIntents.urlToOpen("افتح https://example.com ثم اضغط"));
     }
 }
