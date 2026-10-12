@@ -428,6 +428,136 @@ async function gitProjectInit(relative){
     note:'Initialized local Git only. No commit, push, account login, or network operation was performed.'};
 }
 
+
+/** Deterministic no-fuzz single-file unified-diff patch with SHA-256 precondition. */
+function transformUnified(relative,patch,original){
+  if(typeof patch!=='string'||Buffer.byteLength(patch,'utf8')>28000||patch.includes('\0'))
+    fail('Patch exceeds 28KB or is invalid');
+  const rows=patch.replace(/\r\n/g,'\n').split('\n');
+  if(rows.shift()!=='--- a/'+relative||rows.shift()!=='+++ b/'+relative)
+    fail('Patch file header does not match workspace source');
+  const before=original.split('\n'),output=[];
+  let cursor=0,hunks=0;
+  while(rows.length){
+    const header=rows.shift();
+    if(header===''&&rows.length===0)break;
+    const m=/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(header);
+    if(!m)fail('Invalid unified diff hunk');
+    if(++hunks>20)fail('Too many patch hunks');
+    const start=Number(m[1])-1;
+    const oldCount=m[2]===undefined?1:Number(m[2]);
+    const newCount=m[4]===undefined?1:Number(m[4]);
+    if(start<cursor||start>before.length||oldCount>5000||newCount>5000)
+      fail('Overlapping or out-of-range hunk');
+    output.push(...before.slice(cursor,start));cursor=start;
+    let oldUsed=0,newUsed=0;
+    while(rows.length&&!rows[0].startsWith('@@ ')){
+      const item=rows.shift();
+      if(item===''&&rows.length===0)break;
+      if(item==='\\ No newline at end of file')continue;
+      const kind=item[0],value=item.slice(1);
+      if(kind===' '||kind==='-'){
+        if(before[cursor]!==value)fail('Diff context mismatch; source changed');
+        cursor++;oldUsed++;
+      }
+      if(kind===' '||kind==='+'){output.push(value);newUsed++;}
+      if(!' +-'.includes(kind)||oldUsed>oldCount||newUsed>newCount)
+        fail('Malformed diff hunk body');
+    }
+    if(oldUsed!==oldCount||newUsed!==newCount)fail('Diff hunk line counts mismatch');
+  }
+  if(hunks===0)fail('No patch hunks');
+  output.push(...before.slice(cursor));
+  const updated=output.join('\n');
+  if(updated===original)fail('Patch made no changes');
+  if(Buffer.byteLength(updated,'utf8')>MAX_FILE)fail('Patch grows source beyond 40KB');
+  return {updated,hunks};
+}
+async function patchApply(relative,encoded,expectedHash){
+  if(!/^[a-f0-9]{64}$/.test(expectedHash||''))fail('Patch requires read-backed SHA-256');
+  if(typeof encoded!=='string'||encoded.length>40000)fail('Encoded patch too large');
+  const bytes=Buffer.from(encoded,'base64');
+  if(bytes.toString('base64')!==encoded)fail('Malformed base64 diff');
+  const old=await read(relative);
+  if(old.hash!==expectedHash)fail('Source changed since last read');
+  const transformed=transformUnified(relative,bytes.toString('utf8'),old.content);
+  const file=await target(relative);
+  const ext=path.extname(relative).toLowerCase();
+  const tmp=file+'.aeos-'+crypto.randomBytes(5).toString('hex')+ext;
+  try{
+    await fs.writeFile(tmp,transformed.updated,{flag:'wx',mode:0o600});
+    let syntax={tested:false};
+    if(['.js','.mjs','.cjs','.py','.sh'].includes(ext)){
+      let cmd=process.execPath,args=['--check',tmp];
+      if(ext==='.py'){cmd='python';args=['-B','-c',
+        'import ast,sys;ast.parse(open(sys.argv[1],encoding="utf-8").read())',tmp];}
+      if(ext==='.sh'){cmd='bash';args=['-n',tmp];}
+      const tested=await new Promise((resolve,reject)=>{
+        const child=spawn(cmd,args,{cwd:path.dirname(file),stdio:['ignore','ignore','pipe']});
+        let error='',expired=false;
+        child.stderr.on('data',x=>{error=(error+x.toString()).slice(0,800);});
+        const timer=setTimeout(()=>{expired=true;child.kill('SIGKILL');},10000);
+        child.once('error',e=>{clearTimeout(timer);reject(e);});
+        child.once('close',code=>{clearTimeout(timer);resolve({tested:true,passed:code===0&&!expired,error,expired});});
+      });
+      syntax=tested;
+      if(!tested.passed)fail('Patch failed syntax preflight: '+tested.error);
+    }
+    if((await read(relative)).hash!==expectedHash)fail('Source changed during preflight');
+    await snapshotBeforeWrite(relative,Buffer.from(old.content,'utf8'));
+    await fs.rename(tmp,file);
+    return {path:relative,previousHash:expectedHash,hash:sha(Buffer.from(transformed.updated)),
+      hunks:transformed.hunks,syntax,checkpointed:true,
+      note:'Exact-context line patch, not a language-specific AST rewrite'};
+  }finally{await fs.rm(tmp,{force:true});}
+}
+/** User-provided local CDP port; read-only, no browser process or HTTP server started. */
+async function browserObserve(port){
+  const number=Number(port);
+  if(!Number.isInteger(number)||number<1024||number>65535)
+    fail('CDP port must be 1024–65535');
+  const response=await fetch('http://127.0.0.1:'+number+'/json/list',{
+    redirect:'manual',signal:AbortSignal.timeout(3500)});
+  if(!response.ok)fail('Local CDP not ready (HTTP '+response.status+')');
+  const payload=await response.text();
+  if(payload.length>120000)fail('CDP target list exceeds limit');
+  const targets=JSON.parse(payload);
+  if(!Array.isArray(targets))fail('Invalid CDP response');
+  const target=targets.find(x=>x.type==='page'&&
+    typeof x.webSocketDebuggerUrl==='string');
+  if(!target)return {connected:true,pageAvailable:false};
+  const url=new URL(target.webSocketDebuggerUrl);
+  if(url.protocol!=='ws:'||!['127.0.0.1','localhost'].includes(url.hostname)||
+    Number(url.port)!==number)fail('CDP target is not local to authorized port');
+  if(typeof WebSocket!=='function')fail('Termux Node lacks WebSocket');
+  const socket=new WebSocket(target.webSocketDebuggerUrl);
+  return await new Promise((resolve,reject)=>{
+    let done=false;
+    const end=(error,result)=>{
+      if(done)return;done=true;clearTimeout(timer);socket.close();
+      if(error)reject(error);else resolve(result);
+    };
+    const timer=setTimeout(()=>end(new Error('CDP observation timed out')),6000);
+    socket.addEventListener('error',()=>end(new Error('Cannot connect to CDP WebSocket')));
+    socket.addEventListener('open',()=>{
+      const code='(()=>({title:document.title,url:location.href,state:document.readyState,viewportWidth:innerWidth,documentWidth:document.documentElement.scrollWidth,overflow:document.documentElement.scrollWidth>innerWidth,domNodes:document.querySelectorAll("*").length}))()';
+      socket.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{
+        expression:code,returnByValue:true,awaitPromise:false}}));
+    });
+    socket.addEventListener('message',event=>{
+      try{
+        const m=JSON.parse(event.data);
+        if(m.id!==1)return;
+        if(m.error||m.result?.exceptionDetails)fail('CDP runtime exception');
+        const value=m.result?.result?.value;
+        if(!value||typeof value!=='object')fail('No live DOM observations');
+        end(null,{connected:true,pageAvailable:true,observed:value,
+          note:'Read-only CDP DOM metrics. Requires a separately enabled local Chromium debugger.'});
+      }catch(error){end(error);}
+    });
+  });
+}
+
 async function main(){
   await fs.mkdir(ROOT,{recursive:true,mode:0o700});
   const [verb,...args]=process.argv.slice(2);
@@ -442,6 +572,8 @@ async function main(){
     case 'read':data=await read(args[0]);break;
     case 'history_list':data=await historyList(args[0]);break;
     case 'git_project_status':data=await gitProjectStatus(args[0]);break;
+    case 'patch_apply':data=await patchApply(args[0],args[1],args[2]);break;
+    case 'browser_observe':data=await browserObserve(args[0]);break;
     case 'git_project_diff':data=await gitProjectDiff(args[0]);break;
     case 'git_project_init':data=await gitProjectInit(args[0]);break;
     case 'history_compare':data=await historyCompare(args[0],args[1]);break;
