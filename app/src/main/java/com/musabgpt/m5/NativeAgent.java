@@ -21,7 +21,7 @@ public final class NativeAgent {
     private final JSONArray messages=new JSONArray();
     private int family=0,steps=0,writes=0,validations=0;
     private String mode="plan";
-    private boolean stopped=false,active=false;
+    private boolean stopped=false,active=false,requiresAction=false;
 
     private static final String SYSTEM =
       "You are M5, an Android coding agent with REAL workspace tools. "
@@ -44,6 +44,7 @@ public final class NativeAgent {
         if(active){ui.log("Another task is already running.");return;}
         active=true;stopped=false;steps=0;writes=0;validations=0;
         family=selectedFamily;mode=requestedMode;
+        requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل).*");
         while(messages.length()>0)messages.remove(0);
         messages.put(message("system",SYSTEM));
         messages.put(message("user",goal+
@@ -70,7 +71,7 @@ public final class NativeAgent {
                 JSONObject call=extractCall(text);
                 if(call==null) {
                     ui.log(text.length()>5000?text.substring(0,5000):text);
-                    close(writes>0&&validations==0 ? "Blocked: edits were not verified." : "Response complete.");
+                    close(writes>0&&validations==0 ? "Blocked: edits were not verified." : (requiresAction && writes==0 && validations==0 && "agent".equals(mode) ? "Blocked: no project action was observed." : "Response complete."));
                     return;
                 }
                 messages.put(message("assistant",text));
@@ -105,7 +106,7 @@ public final class NativeAgent {
         if("finish".equals(name)){
             String summary=args.optString("summary","Task ended without a summary.");
             ui.log(summary);
-            close(writes>0&&validations==0?"Blocked: no successful verification after last edit.":"Agent finished.");
+            close(writes>0&&validations==0?"Blocked: no successful verification after last edit.":(requiresAction && writes==0 && validations==0 && "agent".equals(mode) ? "Blocked: no real action was observed." : "Agent finished."));
             return;
         }
         if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff")){
