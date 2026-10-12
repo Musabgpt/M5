@@ -9,7 +9,7 @@ M5 is a native Java Android Activity with Android views for Files, Agent, Termin
 
 Termux serves only as a command execution environment. M5 sends official RUN_COMMAND intents with one-time PendingIntent callbacks. Each tool starts Node.js for a one-shot operation and returns its result via Termux's nested result bundle, then exits. This is a process execution bridge, not a persistent Node server.
 
-First setup uses a separate source checkout in ~/m5-native and project files in ~/m5-workspace. Existing ~/m5 source and existing files are preserved. Official Termux plus allow-external-apps=true and the Run Commands in Termux permission are prerequisites.
+First setup deploys the one-shot JavaScript bridge from the installed APK to ~/m5-native/scripts, with user project files in ~/m5-workspace. No GitHub checkout or network download of M5 code is needed; Termux only needs Node.js installed. Existing ~/m5 source and all project files are preserved. Official Termux plus allow-external-apps=true and the Run Commands in Termux permission are prerequisites.
 
 ## Implemented native features
 
