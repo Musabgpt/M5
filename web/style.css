@@ -5,3 +5,9 @@
 @media(max-width:580px){#sidebar{position:absolute;z-index:5;top:79px;bottom:25px;left:43px;width:235px;box-shadow:6px 0 10px #111a}#sidebar.collapsed{display:none}.welcome{padding:20px}.top{gap:5px}.start-actions{flex-wrap:wrap}.editor-toolbar{padding:0 4px}.editor-toolbar button{padding:6px 5px;font-size:11px}}
 
 .m5-codemirror-host{flex:1;min-height:0;min-width:0;overflow:hidden}.cm-editor{height:100%;width:100%}
+
+.approval-operation{font-weight:700;color:#dce8ff;margin-bottom:9px;font-family:system-ui,sans-serif}
+#approval-detail{background:#171d24;border:1px solid #555;padding:12px;line-height:1.55;max-height:32vh;white-space:pre-wrap;overflow:auto}
+#approval-detail .diff-add{display:inline;color:#9ae6b4;background:#183225}
+#approval-detail .diff-del{display:inline;color:#ffb2b2;background:#4a2020}
+#approval-detail .diff-hunk{display:inline;color:#9ec6ff}
