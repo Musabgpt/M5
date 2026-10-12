@@ -37,7 +37,7 @@ public final class NativeAgent {
     + "Project workspace is controlled by Termux with explicit user consent. "
     + "Available tools: list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
-    + "check_file {path}, run_file {path}, "
+    + "check_file {path,expectedHash}, run_file {path,expectedHash}, "
     + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
     + "phone_open_url {url}, phone_dial {number}, phone_sms_draft {number,text}, "
     + "phone_click {id}, phone_type {id,text}, phone_scroll {id,direction}, phone_back {}, phone_home {}, finish {summary}. "
@@ -278,7 +278,7 @@ public final class NativeAgent {
             Base64.encodeToString(args.optString("content","").getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP),
             args.optString("expectedHash","")};
         else if(verb.equals("shell"))params=new String[]{args.optString("command","")};
-        else if(verb.equals("check_file")||verb.equals("run_file"))params=new String[]{args.optString("path","")};
+        else if(verb.equals("check_file")||verb.equals("run_file"))params=new String[]{args.optString("path",""),args.optString("expectedHash","")};
         else params=new String[0];
         Runnable execute=()->{
             ui.log("Tool: "+name+" ("+(toolArgs.optString("path",toolArgs.optString("command","")))+")");
@@ -302,7 +302,7 @@ public final class NativeAgent {
         };
         if(!modifying){execute.run();return;}
         String detail=name.equals("run_file")
-          ? "Execute "+args.optString("path","")+" with full Termux user permissions? Source code can access Termux data and network."
+          ? "Execute "+args.optString("path","")+" at SHA-256 "+args.optString("expectedHash","")+" with Termux user permissions? Never approve untrusted source."
           :name.equals("write_file")
           ? "Write "+args.optString("path","")+"\n"+args.optString("content","").substring(0,Math.min(2500,args.optString("content","").length()))
           : args.optString("command","");
