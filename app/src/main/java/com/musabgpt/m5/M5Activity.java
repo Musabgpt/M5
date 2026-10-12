@@ -87,18 +87,17 @@ public final class M5Activity extends Activity {
         }
         startButton.setEnabled(false);
         status.setText("Preparing the M5 engine in Termux. No terminal window will be opened.");
+        // Keep Android-side command tiny. The auditable implementation lives in M5.
+        // Never force reset the local checkout or touch ~/m5-workspace.
         String script = "set -eu; "
                 + "command -v git >/dev/null || pkg install -y git >/dev/null; "
                 + "command -v node >/dev/null || pkg install -y nodejs-lts >/dev/null; "
                 + "if [ ! -f \"$HOME/m5/server/index.mjs\" ]; then "
                 + "git clone --depth 1 --branch feat/cursor-grade-workbench https://github.com/Musabgpt/M5.git \"$HOME/m5\"; fi; "
-                + "cd \"$HOME/m5\"; mkdir -p \"$HOME/m5-workspace\"; "
-                + "if [ ! -s web/editor.bundle.js ]; then "
-                + "(npm install --no-audit --no-fund && npm run build) >/dev/null 2>&1 || echo M5_EDITOR_FALLBACK=1; fi; "
-                + "if ! (echo > /dev/tcp/127.0.0.1/8765) 2>/dev/null; then "
-                + "nohup node server/index.mjs > \"$HOME/m5-server.log\" 2>&1 </dev/null & sleep 3; fi; "
-                + "test -s \"$HOME/.m5/session-token\"; "
-                + "printf 'M5_PAIR=%s\\n' \"$(cat \"$HOME/.m5/session-token\")\"";
+                + "if [ ! -f \"$HOME/m5/scripts/termux-bootstrap.sh\" ]; then "
+                + "cd \"$HOME/m5\" && git fetch origin feat/cursor-grade-workbench "
+                + "&& git merge --ff-only FETCH_HEAD; fi; "
+                + "exec bash \"$HOME/m5/scripts/termux-bootstrap.sh\"";
         try {
             Intent callback = new Intent(this, TermuxResultReceiver.class);
             int id = REQUESTS.incrementAndGet();
