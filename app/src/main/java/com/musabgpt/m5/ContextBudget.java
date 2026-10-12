@@ -52,6 +52,7 @@ public final class ContextBudget {
     private static String shorten(String text,int limit){
         if(text.length()<=limit)return text;
         if(limit<55)return text.substring(0,Math.max(0,limit));
-        return text.substring(0,limit-40)+"\n[Context truncated; reread file if needed]";
+        String notice="\n[Context truncated; reread file if needed]";
+        return text.substring(0,limit-notice.length())+notice;
     }
 }
