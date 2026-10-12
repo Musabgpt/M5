@@ -93,6 +93,8 @@ public final class M5Activity extends Activity {
                 + "if [ ! -f \"$HOME/m5/server/index.mjs\" ]; then "
                 + "git clone --depth 1 --branch feat/cursor-grade-workbench https://github.com/Musabgpt/M5.git \"$HOME/m5\"; fi; "
                 + "cd \"$HOME/m5\"; mkdir -p \"$HOME/m5-workspace\"; "
+                + "if [ ! -s web/editor.bundle.js ]; then "
+                + "(npm install --no-audit --no-fund && npm run build) >/dev/null 2>&1 || echo M5_EDITOR_FALLBACK=1; fi; "
                 + "if ! (echo > /dev/tcp/127.0.0.1/8765) 2>/dev/null; then "
                 + "nohup node server/index.mjs > \"$HOME/m5-server.log\" 2>&1 </dev/null & sleep 3; fi; "
                 + "test -s \"$HOME/.m5/session-token\"; "
