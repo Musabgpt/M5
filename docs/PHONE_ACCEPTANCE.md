@@ -57,3 +57,21 @@ Service reference: https://developer.android.com/reference/android/accessibility
 - Export the project as ZIP and verify the source contents match the workspace.
 
 **Known limitation:** `Check` validates Python/Node/shell syntax only, not web browser behavior or a complete unit test suite. Executing untrusted code inside Termux is dangerous; do not approve it.
+
+
+## Native Studio 0.8 physical device acceptance — History and Git
+
+1. Install the separately signed debug app `com.musabgpt.m5.studio8` beside older M5 builds and reconnect Termux.
+2. Open a source file, record its contents, make an edit and Save. Verify the save result. Make a second edit and Save.
+3. Tap **History**. Select an earlier version. Confirm that the SHA-256 values, file path and line-by-line preview match the edits.
+4. Accept restoration. Inspect the file after reload and repeat History to undo the restore. Check the exact original content is restored.
+5. Edit the same file more than ten times. Confirm that only the most recent ten snapshots remain, older snapshots are pruned and the workspace explorer hides `.m5`.
+6. Start a restore, then change the file externally in Termux. Confirm restore fails without replacing the newer file.
+7. Open a workspace folder and select **Initialize local Git repository**. Verify `.gitignore` exists and contains entries for secrets, build files and `node_modules`.
+8. Inspect **Git status** before and after modifying tracked source. Inspect **Git diff** and verify it shows actual Git output and notes its exclusion of untracked files.
+9. Try Git actions in an uninitialized folder and with Git uninstalled. Confirm the interface reports failure instead of success.
+10. Reject restoration/initialization confirmations; verify no file operation occurs.
+11. Confirm no GitHub login, remote, fetch, push, or commit is triggered by History or Git inspection.
+12. Confirm existing Termux Check/Run, encrypted draft recovery, project ZIP export, and the agent's explicit approvals continue functioning.
+
+No claim of universal device automation, full Cursor extension support, LSP or stable interactive PTY is made.
