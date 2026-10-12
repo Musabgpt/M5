@@ -20,3 +20,14 @@
 | Production build | Physical acceptance, update signing | NOT READY |
 
 A green build is not equivalent to full feature acceptance.
+
+## Additional acceptance gates
+
+| Feature | Source gate | Physical-device acceptance |
+|---|---|---|
+| Plan cannot write/execute | `tests/modes.test.mjs` | Pending |
+| Ranked local code context | `tests/context.test.mjs` | Pending |
+| Actual Termux callback contract | `tests/context.test.mjs` and `tests/bootstrap.test.mjs` | Pending |
+| Verified M5 health before pairing | `tests/bootstrap.test.mjs` | Pending |
+| Before-edit approval diff | `tests/diff.test.mjs` | Pending |
+| False-success prevention | `tests/verification.test.mjs` | Pending |

@@ -72,6 +72,18 @@ Open **VS Code** in M5, start its authenticated local service, copy the displaye
 - The free provider router never sends Termux session tokens or source control credentials in model request headers.
 - Android may stop Termux background work. Persistence and recovery of a running agent turn across process death are not complete.
 
+## Recent implementation upgrades — 12 October 2026
+
+- **Real read-only Plan mode:** workspace research is permitted but tool writes and command execution are refused at runtime, regardless of model prompts.
+- **Agent mode:** approved file changes and shell commands; before-edit checkpoints and line-level review diffs.
+- **Private contextual code retrieval:** incremental, ranked filename/symbol/text lookup with line references. It is lexical retrieval, **not** vector-embedding semantic search.
+- **Validation evidence:** executing any successful shell command is no longer treated as passing a test; qualifying validation commands must pass after the latest edit.
+- **Termux contract:** official nested `result` callback with `err`, `exitCode`, `stdout` and bounded receipt validation; the startup script verifies actual localhost M5 health before pairing.
+- **Safer upgrades:** source engine only fast-forwards when tracked files are clean, preserving all user projects in `~/m5-workspace`.
+- **Efficient CI:** pull-request checks run once, instead of duplicate push and PR executions for each developer commit.
+
+These capabilities are implemented and testable in source/CI. Samsung physical-device acceptance, full language-server integration and model reliability are **still open**.
+
 ## Verification and planned parity
 
 Read [architecture](docs/ARCHITECTURE.md) and [test matrix](docs/TEST_MATRIX.md). Current CI exercises real local HTTP security, free gateway routing with mocks, file tools, approval denial, action evidence and rollback. An Android compile is not proof of working real-device UI or free route uptime.

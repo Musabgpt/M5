@@ -1,7 +1,7 @@
 name: M5 — Core Security and Agent Tests
 on:
   push:
-    branches: [main, feat/cursor-grade-workbench]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:

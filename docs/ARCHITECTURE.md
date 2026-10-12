@@ -29,3 +29,13 @@ C. Secure code-server integration under same WebView; test LSP/keyboard/memory a
 D. Semantic index with change invalidation and context packing.
 E. Transaction checkpoints, hunk diffs, agent memory, multiagent worktrees, MCP, browser verification and resumable jobs.
 F. Live free gateway probes; blocked rather than invented unlimited access.
+
+## Verified architecture additions (2026-10-12)
+
+- `ContextIndex`: bounded local symbol/lexical index, refreshed on file mtime/size, exposed via `code_context` and `/api/context`.
+- `AgentManager`: server-enforced read-only Plan vs execution-enabled Agent, per-edit approval and diff preview.
+- `TermuxResultReceiver`: official Termux nested `result` bundle and strict exit/result checks.
+- `termux-bootstrap.sh`: health-authenticated localhost server, safe fast-forward, refusal on occupied foreign port and unchanged user workspace.
+- `isVerificationCommand`: only recognized successful validation commands earn evidence, and a later edit resets that evidence.
+- **Remaining:** physical Android acceptance, PTY, full LSP/VS Code extension integration, process-independent task resumption, browser harness, native tool-use benchmarks and live free-provider evaluation.
+
