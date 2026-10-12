@@ -25,3 +25,18 @@ CI passing does not prove a phone task executed. These scenarios require explici
 **Not yet implemented/verified:** interactive PTY, robust language server, inline autocomplete like Cursor, multi-agent parallel worktrees, production signer and universal phone app automation.
 
 Service reference: https://developer.android.com/reference/android/accessibilityservice/AccessibilityService
+
+## Native Studio v0.5 acceptance
+
+- Install separate app ID `com.musabgpt.m5.studio` and label `M5 Native Studio`; no uninstall of M5 Phone Agent.
+- In Files, choose **New Project** then HTML calculator, Python starter and Node starter. Confirm each creates real files under Termux workspace, reports validation evidence and refuses existing folder overwrite.
+- Tap a generated project folder; export ZIP through Android's document picker. Open the ZIP in a file manager and verify included source files, no secrets.
+- Open index.html in a standard browser using a user-selected export mechanism and exercise arithmetic, including division by zero. A successful syntax check alone is **not** proof of browser runtime behavior.
+- In Agent mode, request code without tool calls. If model returns recognized fenced source, M5 should request approval before writing, read back the file and report only byte-level validation. Reject files that already exist.
+- Verify `phone_observe` or `phone_click` from an LLM actually dispatches to native PhoneTools (regression for prior incorrect whitelist).
+- Native code editor shows line numbers and highlighting without launching a WebView.
+- Switch Agent trace between compact chat and details; confirm tool failures are still visible.
+- Confirm short-term chat context is available for a second ordinary question but is erased via Clear; screen observations are not included in that memory.
+- Confirm the APK uses Android widgets and Termux one-shot processes, not a localhost server.
+
+**Unverified on physical phone until tested:** Accessibility interactions within target apps, external browser HTML preview, ZIP export to each document provider, device-specific keyboard/IME behavior, background recovery.

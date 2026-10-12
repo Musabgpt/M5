@@ -3,8 +3,11 @@ package com.musabgpt.m5;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.InputType;
@@ -28,6 +31,8 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 100% native Android activity: no WebView, no local server, no localhost.
@@ -40,7 +45,12 @@ public final class M5Activity extends Activity {
     private LinearLayout root,body,toolbar;
     private TextView connection;
     private final ArrayList<String> feed=new ArrayList<>();
+    private final Map<String,Button> tabButtons=new LinkedHashMap<>();
+    private boolean showTrace=false;
     private TermuxBridge termux;
+    private ProjectExporter exporter;
+    private static final int REQUEST_EXPORT_ZIP=940;
+    private String pendingExportProject="";
     private FreeModels models;
     private PhoneTools phone;
     private NativeAgent agent;
@@ -57,6 +67,7 @@ public final class M5Activity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         termux=new TermuxBridge(this);
+        exporter=new ProjectExporter(this,termux);
         models=new FreeModels(this);
         phone=new PhoneTools(this);
         agent=new NativeAgent(termux,models,phone,new NativeAgent.Screen() {
@@ -94,14 +105,25 @@ public final class M5Activity extends Activity {
         TextView t=new TextView(this);t.setText(value);t.setTextSize(TypedValue.COMPLEX_UNIT_SP,size);
         t.setTextColor(color);t.setPadding(dp(8),dp(7),dp(8),dp(7));return t;
     }
+    private GradientDrawable surface(int fill,int stroke,int radius){
+        GradientDrawable draw=new GradientDrawable();
+        draw.setColor(fill);
+        draw.setCornerRadius(dp(radius));
+        draw.setStroke(dp(1),stroke);
+        return draw;
+    }
     private Button button(String text,Runnable action){
-        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextColor(Color.WHITE);
-        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(SURFACE));
+        Button b=new Button(this);
+        b.setText(text);b.setAllCaps(false);b.setTextColor(Color.WHITE);
+        b.setTextSize(13);
+        b.setPadding(dp(8),dp(4),dp(8),dp(4));
+        b.setBackground(surface(SURFACE,Color.rgb(60,67,82),12));
         b.setOnClickListener(v->action.run());return b;
     }
     private EditText input(String hint,int lines){
         EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(MUTED);
-        e.setBackgroundTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        e.setBackground(surface(Color.rgb(26,30,40),Color.rgb(77,89,111),12));
+        e.setPadding(dp(14),dp(12),dp(14),dp(12));
         e.setTextSize(14);e.setMinLines(lines);e.setGravity(Gravity.TOP|Gravity.START);
         return e;
     }
@@ -127,7 +149,7 @@ public final class M5Activity extends Activity {
             return insets;
         });
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
-        TextView logo=label("M5 NATIVE",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
+        TextView logo=label("M5 STUDIO",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
         connection=label("↻ Connect Termux",13,ACCENT);
         connection.setContentDescription("Connect M5 to Termux tools");
@@ -139,7 +161,10 @@ public final class M5Activity extends Activity {
         LinearLayout tabs=horizontal();
         for(String name:new String[]{"Files","Agent","Phone","Terminal","Providers"}) {
             Button b=button(name,()->showPanel(name.toLowerCase()));
-            tabs.addView(b,new LinearLayout.LayoutParams(dp(98),dp(48)));
+            tabButtons.put(name.toLowerCase(),b);
+            LinearLayout.LayoutParams tabLayout=new LinearLayout.LayoutParams(dp(96),dp(44));
+            tabLayout.setMargins(dp(3),dp(3),dp(3),dp(3));
+            tabs.addView(b,tabLayout);
         }
         Button connect=button("↻ Termux",this::connectTermux);
         tabs.addView(connect,new LinearLayout.LayoutParams(dp(124),dp(48)));
@@ -174,7 +199,15 @@ public final class M5Activity extends Activity {
         if(req==140 && results.length>0 && results[0]==PackageManager.PERMISSION_GRANTED)connectTermux();
     }
     private void showPanel(String name){
-        activePanel=name;body.removeAllViews();
+        activePanel=name;
+        for(Map.Entry<String,Button> entry:tabButtons.entrySet()){
+            boolean selected=entry.getKey().equals(name);
+            entry.getValue().setBackground(surface(
+                selected?Color.rgb(38,65,103):SURFACE,
+                selected?ACCENT:Color.rgb(60,67,82),12));
+            entry.getValue().setTextColor(selected?Color.rgb(189,219,255):Color.WHITE);
+        }
+        body.removeAllViews();
         switch(name){
             case "files":showFiles();break;
             case "agent":showAgent();break;
@@ -195,12 +228,16 @@ public final class M5Activity extends Activity {
         LinearLayout actions=horizontal();
         actions.addView(button("Refresh",()->requireTermux(this::refreshFiles)),new LinearLayout.LayoutParams(0,dp(48),1));
         actions.addView(button("New file",()->requireTermux(this::newFile)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(selectedFile.isEmpty())actions.addView(button("New project",()->requireTermux(this::newProject)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(actions);
         if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
         if(!selectedFile.isEmpty()) {
-            editor=input("Code editor",10);editor.setTypeface(Typeface.MONOSPACE);
-            editor.setTextSize(13);editor.setHorizontallyScrolling(true);
+            NativeCodeEditor source=new NativeCodeEditor(this);
+            source.setHint("Write your source code here");
+            source.setFilename(selectedFile);
+            editor=source;
+            editor.setMinLines(10);
             editor.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
             body.addView(editor,new LinearLayout.LayoutParams(-1,0,1));
             body.addView(button("Back to Explorer",()->{selectedFile="";showPanel("files");}));
@@ -220,6 +257,7 @@ public final class M5Activity extends Activity {
                     boolean folder="directory".equals(file.optString("type"));
                     TextView row=label((folder?"▸  ":"📄  ")+path,14,folder?ACCENT:Color.WHITE);
                     if(!folder)row.setOnClickListener(v->openFile(path));
+                    else row.setOnClickListener(v->exportProjectDialog(path));
                     rows.addView(row);
                 }
                 if(files==null||files.length()==0)rows.addView(label("Workspace is empty. Create a new file.",14,MUTED));
@@ -228,6 +266,41 @@ public final class M5Activity extends Activity {
             @Override public void failed(String message){showError("Explorer",message);}
         });
     }
+    private void exportProjectDialog(String relative){
+        new AlertDialog.Builder(this).setTitle("Folder: "+relative)
+            .setMessage("Export source files from this folder to a ZIP file on your phone. No network is used.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Export ZIP",(d,w)->{
+                pendingExportProject=relative;
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.setType("application/zip");
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.putExtra(Intent.EXTRA_TITLE,relative.replace('/','_')+".zip");
+                startActivityForResult(intent,REQUEST_EXPORT_ZIP);
+            }).show();
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=REQUEST_EXPORT_ZIP)return;
+        String name=pendingExportProject;
+        pendingExportProject="";
+        if(resultCode!=Activity.RESULT_OK||data==null||data.getData()==null)return;
+        Uri destination=data.getData();
+        status("● Exporting ZIP…");
+        exporter.save(name,destination,new ProjectExporter.Result(){
+            @Override public void finished(int files,int bytes){
+                status("● Termux ready");
+                new AlertDialog.Builder(M5Activity.this).setTitle("ZIP exported")
+                    .setMessage(files+" source file(s), "+bytes+" bytes saved to your selected Android document.")
+                    .setPositiveButton("OK",null).show();
+            }
+            @Override public void failed(String error){
+                status("● Export failed");
+                showError("ZIP incomplete",error+" — an incomplete file may remain at the chosen destination.");
+            }
+        });
+    }
+
     private void openFile(String path) {
         termux.tool("read",new String[]{path},new TermuxBridge.Callback(){
             @Override public void finished(JSONObject file){
@@ -247,6 +320,39 @@ public final class M5Activity extends Activity {
                 if(editor!=null)editor.setText("");
             }).show();
     }
+    private void newProject(){
+        LinearLayout dialog=vertical();
+        dialog.setPadding(dp(20),dp(10),dp(20),dp(5));
+        EditText project=input("Name e.g. Calculator2026",1);
+        project.setSingleLine(true);
+        dialog.addView(project);
+        final String[] presets={"HTML calculator (offline)","Python starter","Node.js starter"};
+        Spinner pick=new Spinner(this);
+        pick.setAdapter(spinnerAdapter(presets));
+        dialog.addView(pick);
+        new AlertDialog.Builder(this).setTitle("Create a real project")
+            .setMessage("Writes project files into Termux private workspace. No paid model or cloud required.")
+            .setView(dialog).setNegativeButton("Cancel",null)
+            .setPositiveButton("Create",(ignored,which)->{
+                String name=project.getText().toString().trim();
+                if(!name.matches("[A-Za-z][A-Za-z0-9_-]{1,35}")){
+                    showError("Invalid name","Use 2–36 letters, numbers, hyphens or underscores; begin with a letter.");
+                    return;
+                }
+                String preset=new String[]{"web-calculator","python","node"}[pick.getSelectedItemPosition()];
+                termux.tool("scaffold",new String[]{name,preset},new TermuxBridge.Callback(){
+                    @Override public void finished(JSONObject result){
+                        String files=result.optJSONArray("files")==null?"":result.optJSONArray("files").toString();
+                        new AlertDialog.Builder(M5Activity.this).setTitle("Project created")
+                            .setMessage("Project: "+result.optString("project")+"\nValidation: "+result.optString("verification")+"\nFiles: "+files)
+                            .setPositiveButton("Open files",(d,w)->{selectedFile="";showPanel("files");})
+                            .show();
+                    }
+                    @Override public void failed(String error){showError("Project not created",error);}
+                });
+            }).show();
+    }
+
     private void saveFile(){
         if(editor==null||selectedFile.isEmpty())return;
         String data=editor.getText().toString();
@@ -260,9 +366,15 @@ public final class M5Activity extends Activity {
     }
     private void showAgent(){
         caption("AI CODING AGENT");
-        info("AI chat uses direct HTTPS. For coding tools tap Connect Termux above. No local server.");
+        LinearLayout options=horizontal();
+        TextView details=label("Native tools  ·  Consent  ·  Free AI",12,MUTED);
+        options.addView(details,new LinearLayout.LayoutParams(0,dp(40),1));
+        options.addView(button(showTrace?"Hide trace":"Show trace",()->{
+            showTrace=!showTrace;showPanel("agent");
+        }));
+        body.addView(options);
         chatScroll=new ScrollView(this);chatLog=vertical();
-        for(String text:feed)chatLog.addView(messageView(text));
+        for(String text:feed)if(showTrace||!isTrace(text))chatLog.addView(messageView(text));
         chatScroll.addView(chatLog);
         body.addView(chatScroll,new LinearLayout.LayoutParams(-1,0,1));
         providerPicker=new Spinner(this);providerPicker.setAdapter(spinnerAdapter(FreeModels.FAMILIES));body.addView(providerPicker);
@@ -279,21 +391,40 @@ public final class M5Activity extends Activity {
             agent.start(goal,providerPicker.getSelectedItemPosition(),modePicker.getSelectedItemPosition()==0?"plan":"agent");
         }),new LinearLayout.LayoutParams(0,dp(48),1));
         row.addView(button("Stop",()->{agent.stop();agentActive=false;}),new LinearLayout.LayoutParams(0,dp(48),1));
+        row.addView(button("Clear",()->new AlertDialog.Builder(this)
+            .setTitle("Clear current chat?")
+            .setMessage("Clear the visible task feed and short-term chat context. Project files are preserved.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Clear",(d,w)->{agent.clearConversation();feed.clear();showPanel("agent");})
+            .show()),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(row);
     }
     private ArrayAdapter<String> spinnerAdapter(String[] values){
         ArrayAdapter<String> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,values);
         return a;
     }
+    private boolean isTrace(String content){
+        return content.startsWith("Reasoning step")||content.startsWith("Provider:")||
+            content.startsWith("Tool:")||content.startsWith("Result of ")||
+            content.startsWith("M5 native ")||content.startsWith("Opening ");
+    }
     private TextView messageView(String content){
-        TextView text=label(content,14,Color.WHITE);text.setBackgroundColor(SURFACE);
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(7);
-        text.setLayoutParams(lp);return text;
+        boolean user=content.startsWith("You:");
+        boolean blocked=content.startsWith("Blocked:")||content.startsWith("Tool failed:")||content.startsWith("Free model request failed:");
+        TextView text=label(content,14,user?Color.rgb(231,241,255):Color.WHITE);
+        text.setPadding(dp(15),dp(12),dp(15),dp(12));
+        text.setBackground(surface(user?Color.rgb(29,60,104):
+            blocked?Color.rgb(89,48,42):Color.rgb(37,43,56),
+            blocked?Color.rgb(155,83,70):Color.rgb(59,69,89),14));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(user?dp(25):0,dp(2),user?0:dp(12),dp(6));
+        text.setLayoutParams(lp);
+        return text;
     }
     private void addFeed(String text){
         feed.add(text);
         while(feed.size()>90)feed.remove(0);
-        if("agent".equals(activePanel) && chatLog!=null){
+        if("agent".equals(activePanel) && chatLog!=null && (showTrace||!isTrace(text))){
             chatLog.addView(messageView(text));
             chatScroll.post(()->chatScroll.fullScroll(View.FOCUS_DOWN));
         }

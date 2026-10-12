@@ -1,4 +1,4 @@
-# M5 Native — Android AI Coding Workbench
+# M5 Native Studio — Android AI Coding Workbench
 
 **Native Android application. No WebView. No localhost server.**
 
@@ -9,8 +9,8 @@ This branch replaces the original WebView-based app with native Java Android scr
 
 ## Installation (developer preview)
 
-1. Download M5-Native-debug-APK from a **successful** GitHub Android workflow artifact for PR #2.
-2. Install it alongside the older M5. This preview uses the separate application ID com.musabgpt.m5.phoneagent and label M5 Phone Agent. Install it beside the older M5 Native Fix; do not uninstall or lose existing files.
+1. Download M5-Native-Studio-APK from a **successful** GitHub Android workflow artifact for PR #2.
+2. Install it alongside the older M5. Native Studio v0.5 uses the separate application ID com.musabgpt.m5.studio and label M5 Native Studio. Install it alongside older M5 builds without uninstalling them.
 3. Ensure official Termux is installed, enable allow-external-apps=true in ~/.termux/termux.properties, and grant M5 Native Android's additional RUN_COMMAND permission.
 4. Launch M5 Native. The native UI appears immediately; tap ↻ Termux to connect once. The app installs its bundled tool script into ~/m5-native and preserves ~/m5-workspace project files. It does not clone GitHub or run a server. Node.js must be present in Termux (M5 may request Termux to install it if missing).
 5. Use Files, Agent, and Terminal in one native Android activity. No HTTP service is started.
@@ -33,3 +33,15 @@ The new Phone screen opens installed apps directly without using an LLM (try **�
 Additional native actions: HTTPS browser links, dialer screen, and **unsent** SMS drafts. M5 cannot bypass Android restrictions or guarantee operation of every app. Full Cursor editor/agent parity is NOT complete.
 
 Free provider choices now include optional official Groq/OpenRouter/Google AI Studio free tiers with a user-supplied key stored using Android Keystore AES-GCM. Free quotas, uptime and access are not unlimited or guaranteed. Use the Providers screen to test a configured route. See [phone acceptance plan](docs/PHONE_ACCEPTANCE.md).
+
+## Native Studio 0.5 engineering milestone
+
+- Fixed a critical defect where all model-origin `phone_*` calls were rejected by the workspace-only whitelist before Android execution.
+- Offline project creation from native **New Project**: a working HTML/CSS/JavaScript calculator starter, plus Python and Node starters. Real files are created under Termux, with no remote model. JavaScript source is syntax-checked using Node.
+- Source-only model replies (without tool calls) can become explicit write proposals for new files, each requiring approval and verified by content read-back. The system does **not** claim these files have been runtime-tested.
+- Native editor with syntax coloring and line-number gutter; no WebView and no HTTP server.
+- Folder ZIP export via Android's user-selected document destination; built-in source access prevents path escapes and sensitive files.
+- Cleaner native workspace and agent UI, with a switchable full tool trace. A bounded in-memory conversation context preserves simple chats until cleared, without retaining tool observations.
+- New native source-creation and model-artifact tests; CI cancels superseded PR runs to conserve free build minutes.
+
+This is a tangible native agent/coding preview, **not full Cursor parity**. Features such as full LSP, interactive PTY, extension host, semantic repo-indexing on Android, durable multi-agent execution and dependable broad phone automation remain unfinished.
