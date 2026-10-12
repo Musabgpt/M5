@@ -246,7 +246,7 @@ public final class NativeAgent {
         };
         if(!confirm){execute.run();return;}
         String preview=readScreen
-            ? "Read visible foreground app labels and send them to the selected free model? Do not approve if sensitive information is visible."
+            ? "Share the currently visible screen labels or installed app names with the selected free model? Do not approve while confidential information is visible."
             : "Android action: "+name+"\n"+args.toString();
         ui.requestApproval(readScreen?"Share screen labels with AI?":"Approve phone action?",preview,approved->{
             if(!active||stopped)return;

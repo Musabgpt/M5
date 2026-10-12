@@ -8,8 +8,8 @@ android {
         applicationId 'com.musabgpt.m5'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.3.0-native-fix'
+        versionCode 4
+        versionName '0.4.0-phone-agent-preview'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -17,7 +17,7 @@ android {
     }
     buildTypes {
         release { minifyEnabled false }
-        debug { applicationIdSuffix '.nativefix' }
+        debug { applicationIdSuffix '.phoneagent' }
     }
 }
 

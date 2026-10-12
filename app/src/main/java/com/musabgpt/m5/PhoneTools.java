@@ -55,12 +55,16 @@ public final class PhoneTools {
         if(pkg==null){
             Intent launcher=new Intent(Intent.ACTION_MAIN);
             launcher.addCategory(Intent.CATEGORY_LAUNCHER);
+            java.util.LinkedHashSet<String> matches=new java.util.LinkedHashSet<>();
             for(ResolveInfo item:pm.queryIntentActivities(launcher,0)){
                 String label=normalize(String.valueOf(item.loadLabel(pm)));
                 String found=normalize(item.activityInfo.packageName);
                 if(label.equals(query)||found.equals(query)){pkg=item.activityInfo.packageName;break;}
-                if(pkg==null&&(label.contains(query)||query.contains(label)))pkg=item.activityInfo.packageName;
+                if(query.length()>=3&&(label.contains(query)||found.contains(query)))matches.add(item.activityInfo.packageName);
             }
+            if(pkg==null&&matches.size()==1)pkg=matches.iterator().next();
+            if(pkg==null&&matches.size()>1)
+                throw new IllegalStateException("Multiple apps match this name. Specify the exact app name.");
         }
         if(pkg==null)throw new IllegalStateException("App not found: "+requested);
         Intent intent=pm.getLaunchIntentForPackage(pkg);

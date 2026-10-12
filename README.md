@@ -10,7 +10,7 @@ This branch replaces the original WebView-based app with native Java Android scr
 ## Installation (developer preview)
 
 1. Download M5-Native-debug-APK from a **successful** GitHub Android workflow artifact for PR #2.
-2. Install it alongside the older M5. This repaired debug build uses the separate application ID com.musabgpt.m5.nativefix and the visible app label M5 Native Fix. It can be installed beside the earlier M5 Native; no uninstall is required.
+2. Install it alongside the older M5. This preview uses the separate application ID com.musabgpt.m5.phoneagent and label M5 Phone Agent. Install it beside the older M5 Native Fix; do not uninstall or lose existing files.
 3. Ensure official Termux is installed, enable allow-external-apps=true in ~/.termux/termux.properties, and grant M5 Native Android's additional RUN_COMMAND permission.
 4. Launch M5 Native. The native UI appears immediately; tap ↻ Termux to connect once. The app installs its bundled tool script into ~/m5-native and preserves ~/m5-workspace project files. It does not clone GitHub or run a server. Node.js must be present in Termux (M5 may request Termux to install it if missing).
 5. Use Files, Agent, and Terminal in one native Android activity. No HTTP service is started.
@@ -25,3 +25,11 @@ This branch replaces the original WebView-based app with native Java Android scr
 
 Full architecture: [docs/NATIVE_ANDROID.md](docs/NATIVE_ANDROID.md).
 Legacy M5 WebView server code remains in the repository for historical compatibility with the earlier branch but is not used or needed by the new native Android Activity.
+
+## Native phone agent (0.4.0 preview)
+
+The new Phone screen opens installed apps directly without using an LLM (try **افتح واتساب**), lists launchable apps, and opens Android Accessibility settings. On-demand Android accessibility supports visible UI inspection, tap, type, scroll, Back and Home. Requests to share visible UI with a free model need explicit consent; actions need approval. Approval can appear as a visible accessibility overlay above the target application. Accessibility must be enabled manually by the user, and can be disabled any time. No root, ADB, hidden monitoring, or local HTTP server.
+
+Additional native actions: HTTPS browser links, dialer screen, and **unsent** SMS drafts. M5 cannot bypass Android restrictions or guarantee operation of every app. Full Cursor editor/agent parity is NOT complete.
+
+Free provider choices now include optional official Groq/OpenRouter/Google AI Studio free tiers with a user-supplied key stored using Android Keystore AES-GCM. Free quotas, uptime and access are not unlimited or guaranteed. Use the Providers screen to test a configured route. See [phone acceptance plan](docs/PHONE_ACCEPTANCE.md).
