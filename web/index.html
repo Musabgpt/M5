@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#171717">
+  <title>M5 — AI Coding Workbench</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <span class="brand"><span class="logo">M5</span> <span class="muted">WORKBENCH</span></span>
+    <span id="workspace-name" class="crumb">Workspace</span>
+    <button id="refresh" class="small" title="Refresh project">↻</button>
+  </header>
+  <div class="layout">
+    <nav class="rail" aria-label="Main navigation">
+      <button data-panel="files" class="active" title="Explorer">▤</button>
+      <button data-panel="agent" title="Agent">◇</button>
+      <button data-panel="ide" title="VS Code IDE">⌘</button>
+      <button data-panel="search" title="Search">⌕</button>
+      <button data-panel="git" title="Git">⑂</button>
+      <button data-panel="terminal" title="Terminal">›_</button>
+      <button data-panel="settings" title="Providers">⚙</button>
+    </nav>
+    <aside id="sidebar">
+      <div class="pane-title"><span id="sidebar-title">EXPLORER</span><button id="new-file" title="Create file">＋</button></div>
+      <div id="file-tree" class="tree"></div>
+      <div class="sidebar-bottom"><span id="workspace-path"></span></div>
+    </aside>
+    <main class="main">
+      <div class="tabs"><span id="tab-label">Welcome</span><span id="dirty-dot"></span></div>
+      <section id="welcome" class="welcome">
+        <h1>M5 <span class="accent">Coding Workbench</span></h1>
+        <p>One workspace. Real project files. A bounded coding agent, Git tools and a Termux runtime.</p>
+        <div class="start-actions">
+          <button id="open-agent">Start AI agent</button>
+          <button id="open-files">Open Explorer</button>
+        </div>
+        <p class="hint">M5 is in active development. A model label does not guarantee an online free provider or a finished task.</p>
+      </section>
+      <section id="editor-view" hidden>
+        <div class="editor-toolbar">
+          <strong id="file-name">No file</strong>
+          <div class="actions">
+            <button id="save" title="Ctrl+S">Save</button>
+            <button id="ai-edit">Edit with AI</button>
+            <button id="preview">Preview HTML</button>
+          </div>
+        </div>
+        <div class="editor-shell">
+          <div id="line-numbers" aria-hidden="true">1</div>
+          <textarea id="editor" spellcheck="false" wrap="off" autocapitalize="off" autocomplete="off" aria-label="Source code"></textarea>
+        </div>
+        <div class="statusline" id="editor-status">Ln 1, Col 1</div>
+      </section>
+      <section id="secondary-view" hidden></section>
+      <section id="agent-view" hidden>
+        <div class="agent-header"><strong>Agent</strong><span id="agent-status">Ready</span><button id="agent-stop" disabled>Stop</button></div>
+        <div id="conversation" class="conversation" role="log" aria-live="polite"></div>
+        <div id="approval" class="approval" hidden>
+          <strong>Approval required</strong><pre id="approval-detail"></pre>
+          <button id="deny" class="danger">Deny</button><button id="approve">Approve once</button>
+        </div>
+        <form id="agent-form" class="composer">
+          <select id="provider-family" aria-label="Free provider family">
+            <option value="freellmpool">FreeLLMPool (free routes)</option>
+            <option value="gpt4free">GPT4Free (local)</option>
+            <option value="free-llm-gateway">Free LLM Gateway (local)</option>
+            <option value="free-llm-api">Free LLM API (local)</option>
+          </select>
+          <select id="agent-mode" aria-label="Agent permission mode">
+            <option value="plan">Plan · read-only analysis</option>
+            <option value="agent">Agent · review writes and commands</option>
+          </select>
+          <textarea id="agent-prompt" rows="3" placeholder="Ask M5 to inspect, edit, test or explain project files..." required></textarea>
+          <button type="submit">Run agent ↗</button>
+        </form>
+      </section>
+    </main>
+  </div>
+  <footer id="footer"><span id="connection">Connecting…</span><span>Localhost · Termux</span></footer>
+</div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+name: M5 — Core Security and Agent Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install open-source CodeMirror build dependencies
+        run: npm install --no-audit --no-fund
+      - name: Bundle offline CodeMirror editor
+        run: |
+          npm run build
+          test -s web/editor.bundle.js
+      - name: Syntax checks
+        run: npm run check
+      - name: Security, free provider and agent integration tests
+        run: npm test

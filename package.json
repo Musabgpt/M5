@@ -1,0 +1,26 @@
+{
+  "name": "m5-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check server/index.mjs && node --check server/agent.mjs && node --check server/tools.mjs && node --check web/app.js && node --check web/editor-src.js && bash -n scripts/termux-bootstrap.sh",
+    "build": "esbuild web/editor-src.js --bundle --minify --format=esm --outfile=web/editor.bundle.js"
+  },
+  "dependencies": {
+    "codemirror": "6.0.2",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/lang-html": "^6.4.0",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/theme-one-dark": "^6.1.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
