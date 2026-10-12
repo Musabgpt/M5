@@ -62,11 +62,23 @@ public final class M5Activity extends Activity {
         agent=new NativeAgent(termux,models,phone,new NativeAgent.Screen() {
             @Override public void log(String text){runOnUiThread(()->addFeed(text));}
             @Override public void requestApproval(String title,String preview,NativeAgent.Decision callback) {
-                runOnUiThread(()->new AlertDialog.Builder(M5Activity.this)
-                    .setTitle(title).setMessage(preview.length()>2400?preview.substring(0,2400)+"…":preview)
-                    .setNegativeButton("Deny",(d,w)->callback.decided(false))
-                    .setPositiveButton("Approve once",(d,w)->callback.decided(true))
-                    .setOnCancelListener(d->callback.decided(false)).show());
+                runOnUiThread(()->{
+                    if(!hasWindowFocus()){
+                        M5AccessibilityService active=M5AccessibilityService.active();
+                        if(active!=null){
+                            active.askOnScreen(title,preview,approved->callback.decided(approved));
+                        }else {
+                            addFeed("Approval blocked: foreground application is open and M5 Accessibility is disabled.");
+                            callback.decided(false);
+                        }
+                        return;
+                    }
+                    new AlertDialog.Builder(M5Activity.this)
+                        .setTitle(title).setMessage(preview.length()>2400?preview.substring(0,2400)+"…":preview)
+                        .setNegativeButton("Deny",(d,w)->callback.decided(false))
+                        .setPositiveButton("Approve once",(d,w)->callback.decided(true))
+                        .setOnCancelListener(d->callback.decided(false)).show();
+                });
             }
             @Override public void finished(String result){runOnUiThread(()->{agentActive=false;addFeed(result);});}
         });
