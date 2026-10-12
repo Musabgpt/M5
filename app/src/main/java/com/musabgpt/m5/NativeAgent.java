@@ -157,15 +157,65 @@ public final class NativeAgent {
             @Override public void success(String text,String route) {
                 MAIN.post(()->{if(!stopped && generation==taskGeneration)handleModelResult(text,route);});
             }
+            @Override public void status(String event){
+                MAIN.post(()->{
+                    if(!stopped&&generation==taskGeneration)ui.log(event);
+                });
+            }
             @Override public void error(String error) {
                 MAIN.post(()->{
                     if(stopped || generation!=taskGeneration)return;
                     ui.log("Free model request failed: "+error);
-                    close("Blocked: no available free provider responded.");
+                    fallbackOrReport();
                 });
             }
         });
     }
+    private void fallbackOrReport(){
+        OfflineFallback.Plan fallback=OfflineFallback.match(latestUserMessage);
+        if(!"agent".equals(mode)||fallback==null||!termux.isConnected()||writes>0){
+            close("Blocked: no free model responded, and this task has no safe offline template.");
+            return;
+        }
+        phase="AWAITING_OFFLINE_APPROVAL";
+        String project=fallback.projectPrefix+
+            String.valueOf(System.currentTimeMillis()%100000000L);
+        ui.requestApproval("Create offline "+fallback.preset+" project?",
+            "All free inference routes are unavailable. "+fallback.explanation+
+            "\nProject: "+project+"\nLocation: Termux ~/m5-workspace"+
+            "\nNo model, paid service or network will be used. No existing files will be overwritten.",
+            approved->{
+                if(stopped||!active)return;
+                if(!approved){
+                    close("Blocked: offline template creation was declined.");
+                    return;
+                }
+                phase="OFFLINE_SCAFFOLD";
+                termux.tool("scaffold",new String[]{project,fallback.preset},
+                    new TermuxBridge.Callback(){
+                        @Override public void finished(JSONObject receipt){
+                            if(stopped||!active)return;
+                            if(!project.equals(receipt.optString("project",""))){
+                                close("Blocked: offline generator returned the wrong project identity.");
+                                return;
+                            }
+                            String verification=receipt.optString("verification","");
+                            writes++;
+                            if("node --check passed".equals(verification))validations++;
+                            ui.log("[Mesh] Offline project created: "+project+
+                                " · "+verification+" · "+receipt.optJSONArray("files"));
+                            close("Offline fallback completed: "+project+
+                                " ("+verification+"). Functional tests remain necessary.");
+                        }
+                        @Override public void failed(String error){
+                            if(stopped||!active)return;
+                            ui.log("[Mesh] Offline fallback failed: "+error);
+                            close("Blocked: offline project could not be created.");
+                        }
+                    });
+            });
+    }
+
     private void handleModelResult(String text,String route) {
         providerRoute=route;phase="DECIDE_TOOL";
         ui.log("Provider: "+route);
