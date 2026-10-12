@@ -142,7 +142,7 @@ public final class M5Activity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                return !("http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort() == 8765);
+                return !("http".equals(uri.getScheme()) && ((("127.0.0.1".equals(uri.getHost()) && uri.getPort() == 8765)) || (("localhost".equals(uri.getHost()) && uri.getPort() == 8778))));
             }
             @Override public void onReceivedError(WebView view, android.webkit.WebResourceRequest request, android.webkit.WebResourceError error) {
                 if (request.isForMainFrame()) runOnUiThread(() -> showSetup("M5 service is not responding. Tap Start M5 to restart its Termux engine."));
