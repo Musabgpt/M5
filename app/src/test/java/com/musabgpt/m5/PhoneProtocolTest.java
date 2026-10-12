@@ -17,6 +17,12 @@ public class PhoneProtocolTest {
         AgentProtocol.Result type=AgentProtocol.parse(
             "{\"name\":\"phone_type\",\"arguments\":{\"id\":4,\"text\":\"مرحبا\"}}");
         assertEquals("مرحبا",type.call.getJSONObject("arguments").getString("text"));
+        AgentProtocol.Result browser=AgentProtocol.parse(
+            "{\"action\":\"phone_open_url\",\"url\":\"https://example.com\"}");
+        assertEquals("phone_open_url",browser.call.getString("name"));
+        AgentProtocol.Result sms=AgentProtocol.parse(
+            "{\"action\":\"phone_sms_draft\",\"number\":\"07700900000\",\"text\":\"test\"}");
+        assertEquals("phone_sms_draft",sms.call.getString("name"));
     }
     @Test public void modelCannotIntroduceUnregisteredPowerTools() {
         AgentProtocol.Result blocked=AgentProtocol.parse(
