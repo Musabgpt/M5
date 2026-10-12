@@ -70,6 +70,10 @@
             <option value="free-llm-gateway">Free LLM Gateway (local)</option>
             <option value="free-llm-api">Free LLM API (local)</option>
           </select>
+          <select id="agent-mode" aria-label="Agent permission mode">
+            <option value="plan">Plan · read-only analysis</option>
+            <option value="agent">Agent · review writes and commands</option>
+          </select>
           <textarea id="agent-prompt" rows="3" placeholder="Ask M5 to inspect, edit, test or explain project files..." required></textarea>
           <button type="submit">Run agent ↗</button>
         </form>
