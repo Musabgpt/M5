@@ -37,7 +37,7 @@ public final class NativeAgent {
     + "Project workspace is controlled by Termux with explicit user consent. "
     + "Available tools: list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
-    + "check_file {path,expectedHash}, run_file {path,expectedHash}, "
+    + "check_file {path,expectedHash}, run_file {path,expectedHash}, audit_project {path},  "
     + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
     + "phone_open_url {url}, phone_dial {number}, phone_sms_draft {number,text}, "
     + "phone_click {id}, phone_type {id,text}, phone_scroll {id,direction}, phone_back {}, phone_home {}, finish {summary}. "
@@ -253,7 +253,7 @@ public final class NativeAgent {
             runPhone(name,toolArgs);
             return;
         }
-        if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|git_status|git_diff")){
+        if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|audit_project|git_status|git_diff")){
             observed(name,"REJECTED: unregistered tool");return;
         }
         final boolean modifying=name.equals("write_file")||name.equals("run_command")||name.equals("run_file");
@@ -279,6 +279,7 @@ public final class NativeAgent {
             args.optString("expectedHash","")};
         else if(verb.equals("shell"))params=new String[]{args.optString("command","")};
         else if(verb.equals("check_file")||verb.equals("run_file"))params=new String[]{args.optString("path",""),args.optString("expectedHash","")};
+        else if(verb.equals("audit_project"))params=new String[]{args.optString("path","")};
         else params=new String[0];
         Runnable execute=()->{
             ui.log("Tool: "+name+" ("+(toolArgs.optString("path",toolArgs.optString("command","")))+")");
