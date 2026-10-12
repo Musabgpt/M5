@@ -260,8 +260,31 @@ async function scaffoldProject(name,preset){
   }catch(e){await fs.rm(folder,{recursive:true,force:true});throw e;}
 }
 
+function approvedShellShape(value){
+  if(typeof value!=='string'||value.length>300||!value.trim())return false;
+  if(/[;&|<>$\\\n\r]/.test(value)||value.includes(String.fromCharCode(96))||
+      value.includes('../')||value.includes('/data/'))return false;
+  const tokens=value.trim().split(/\s+/);
+  const head=tokens[0],tail=tokens.slice(1);
+  if(tokens.length===1)return ['pwd','ls','whoami'].includes(head);
+  if(head==='ls')return tail.every(t=>['-l','-a','-al','-la'].includes(t)||/^[A-Za-z0-9_./-]{1,100}$/.test(t));
+  if(head==='npm')return (tokens.length===2&&tokens[1]==='test')||
+    (tokens.length===3&&tokens[1]==='run'&&/^(test|build|lint|check)$/.test(tokens[2]));
+  if(head==='node')return tokens[1]==='--test'&&tokens.length<=3;
+  if(head==='python'||head==='python3')
+    return tokens[1]==='-m'&&tokens.length<=4&&/^(pytest|unittest|py_compile)$/.test(tokens[2]);
+  if(head==='pytest')return tokens.length<=3&&tail.every(t=>/^[A-Za-z0-9_./-]+$/.test(t));
+  if(head==='go')return tokens[1]==='test'&&tokens.length<=3;
+  if(head==='cargo')return tokens.length===2&&tokens[1]==='test';
+  if(head==='bash'||head==='sh')return tokens.length===3&&tokens[1]==='-n'&&/^[A-Za-z0-9_./-]+$/.test(tokens[2]);
+  if(head==='pkg'&&tokens[1]==='install'){
+    const pkgs=tail.filter(t=>t!=='install'&&t!=='-y');
+    return pkgs.length>=1&&pkgs.length<=6&&pkgs.every(p=>/^[a-z0-9][a-z0-9+._-]*$/.test(p));
+  }
+  return false;
+}
 async function command(value,timeout=30000) {
-  if(typeof value!=='string'||value.length>1600||!value.trim())fail('Invalid shell command');
+  if(!approvedShellShape(value))fail('Shell command refused by AEOS allowlist: use typed tools or approved supported checks');
   return await new Promise((resolve,reject)=>{
     const env=Object.fromEntries(['PATH','HOME','TMPDIR','LANG','TERM'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
     const child=spawn('bash',['-lc',value],{cwd:ROOT,env,stdio:['ignore','pipe','pipe']});
