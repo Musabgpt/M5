@@ -236,8 +236,9 @@ public final class M5Activity extends Activity {
         row.addView(button("Send",()->{
             String goal=agentInput.getText().toString().trim();
             if(goal.isEmpty())return;
-            requireTermux(()->{addFeed("You: "+goal);agentActive=true;agentInput.setText("");
-                agent.start(goal,providerPicker.getSelectedItemPosition(),modePicker.getSelectedItemPosition()==0?"plan":"agent");});
+            addFeed("You: "+goal);agentActive=true;agentInput.setText("");
+            // Direct HTTPS chat works without Termux; only tool invocations need the bridge.
+            agent.start(goal,providerPicker.getSelectedItemPosition(),modePicker.getSelectedItemPosition()==0?"plan":"agent");
         }),new LinearLayout.LayoutParams(0,dp(48),1));
         row.addView(button("Stop",()->{agent.stop();agentActive=false;}),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(row);
