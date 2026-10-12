@@ -123,7 +123,7 @@ export const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/agent/start' && req.method === 'POST') {
       const input = await body(req);
-      return json(res, 202, agent.start(ensureString(input.goal, 10000), ensureString(input.family || 'freellmpool', 80)));
+      return json(res, 202, agent.start(ensureString(input.goal, 10000), ensureString(input.family || 'freellmpool', 80), ensureString(input.mode || 'agent', 12)));
     }
     const match = /^\/api\/agent\/([a-f0-9-]{36})(?:\/(approve|stop))?$/.exec(url.pathname);
     if (match) {
