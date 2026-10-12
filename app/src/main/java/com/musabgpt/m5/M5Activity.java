@@ -274,6 +274,7 @@ public final class M5Activity extends Activity {
         actions.addView(button("Refresh",()->requireTermux(this::refreshFiles)),new LinearLayout.LayoutParams(0,dp(48),1));
         actions.addView(button("New file",()->requireTermux(this::newFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("New project",()->requireTermux(this::newProject)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(selectedFile.isEmpty())actions.addView(button("Search",()->requireTermux(this::searchWorkspace)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(actions);
         if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
@@ -376,6 +377,43 @@ public final class M5Activity extends Activity {
                 showPanel("files");
             }).show();
     }
+    private void searchWorkspace(){
+        EditText query=input("Search code text (e.g. calculate)",1);
+        query.setSingleLine(true);
+        new AlertDialog.Builder(this).setTitle("Find in project files")
+            .setView(query).setNegativeButton("Cancel",null)
+            .setPositiveButton("Search",(dialog,which)->{
+                String text=query.getText().toString().trim();
+                if(text.isEmpty()||text.length()>100){
+                    showError("Invalid search","Enter 1–100 characters");return;
+                }
+                termux.tool("search",new String[]{text},new TermuxBridge.Callback(){
+                    @Override public void finished(JSONObject result){
+                        JSONArray matches=result.optJSONArray("matches");
+                        if(matches==null||matches.length()==0){
+                            showError("Search", "No matching source lines found in the indexed workspace files.");
+                            return;
+                        }
+                        ArrayList<String> labels=new ArrayList<>();
+                        ArrayList<String> paths=new ArrayList<>();
+                        for(int i=0;i<matches.length()&&i<80;i++){
+                            JSONObject hit=matches.optJSONObject(i);
+                            if(hit==null)continue;
+                            String path=hit.optString("path","");
+                            if(path.isEmpty())continue;
+                            paths.add(path);
+                            labels.add(path+":"+hit.optInt("line")+"\n"+hit.optString("text",""));
+                        }
+                        new AlertDialog.Builder(M5Activity.this).setTitle("Search results · "+text)
+                            .setItems(labels.toArray(new String[0]),(dlg,index)->{
+                                openFile(paths.get(index));
+                            }).setNegativeButton("Close",null).show();
+                    }
+                    @Override public void failed(String error){showError("Code search failed",error);}
+                });
+            }).show();
+    }
+
     private void newProject(){
         LinearLayout dialog=vertical();
         dialog.setPadding(dp(20),dp(10),dp(20),dp(5));
