@@ -58,6 +58,21 @@ public final class NativeAgent {
         family=selectedFamily;mode=requestedMode;
         requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|open|launch|click|tap|scroll|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل|افتح|اضغط|شغل|مرر).*");
         // Explicit, simple app-launch requests are handled by Android, not an unreliable model.
+        String directUrl=LocalIntents.urlToOpen(goal);
+        if("agent".equals(mode) && directUrl!=null){
+            try {
+                JSONObject result=phone.openUrl(directUrl);
+                if(result.optBoolean("executed",false)){
+                    phoneActions++;
+                    ui.log("Android browser opened host "+result.optString("host",""));
+                    close("Browser intent dispatched.");
+                }else close("Blocked: Android did not dispatch the URL.");
+            }catch(Exception e){
+                ui.log("Browser error: "+e.getMessage());
+                close("Blocked: could not open the HTTPS link.");
+            }
+            return;
+        }
         String directApp=LocalIntents.appToOpen(goal);
         if("agent".equals(mode) && directApp!=null) {
             String app=directApp;
