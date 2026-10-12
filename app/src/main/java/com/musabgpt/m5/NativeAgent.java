@@ -1,6 +1,8 @@
 package com.musabgpt.m5;
 
 import android.util.Base64;
+import android.os.Handler;
+import android.os.Looper;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +24,8 @@ public final class NativeAgent {
     private int family=0,steps=0,writes=0,validations=0;
     private String mode="plan";
     private boolean stopped=false,active=false,requiresAction=false;
+    private static final Handler MAIN=new Handler(Looper.getMainLooper());
+    private int taskGeneration=0;
 
     private static final String SYSTEM =
       "You are M5, an Android coding agent with REAL workspace tools. "
@@ -42,6 +46,7 @@ public final class NativeAgent {
 
     void start(String goal,int selectedFamily,String requestedMode) {
         if(active){ui.log("Another task is already running.");return;}
+        taskGeneration++;
         active=true;stopped=false;steps=0;writes=0;validations=0;
         family=selectedFamily;mode=requestedMode;
         requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل).*");
@@ -53,45 +58,49 @@ public final class NativeAgent {
         ui.log("M5 native "+mode+" started. Tools run only through Termux.");
         advance();
     }
-    void stop(){stopped=true;active=false;ui.finished("Stopped by user.");}
+    void stop(){taskGeneration++;stopped=true;active=false;ui.finished("Stopped by user.");}
     private JSONObject message(String role,String content){
         JSONObject obj=new JSONObject();
         try{obj.put("role",role);obj.put("content",content);}catch(Exception ignored){}
         return obj;
     }
     private void close(String status){active=false;ui.finished(status);}
-    private void advance(){
-        if(stopped)return;
-        if(++steps>12){close("Stopped: 12-step limit. No unverified success claimed.");return;}
+    private void advance() {
+        if(stopped || !active)return;
+        if(++steps>12){close("Blocked: 12-step limit reached without verified completion.");return;}
+        final int generation=taskGeneration;
         ui.log("Reasoning step "+steps);
         models.complete(messages,family,new FreeModels.Callback(){
-            @Override public void success(String text,String route){
-                if(stopped)return;
-                ui.log("Provider: "+route);
-                JSONObject call=extractCall(text);
-                if(call==null) {
-                    ui.log(text.length()>5000?text.substring(0,5000):text);
-                    close(writes>0&&validations==0 ? "Blocked: edits were not verified." : (requiresAction && writes==0 && validations==0 && "agent".equals(mode) ? "Blocked: no project action was observed." : "Response complete."));
-                    return;
-                }
-                messages.put(message("assistant",text));
-                run(call);
+            @Override public void success(String text,String route) {
+                MAIN.post(()->{if(!stopped && generation==taskGeneration)handleModelResult(text,route);});
             }
-            @Override public void error(String error){if(!stopped){ui.log(error);close("Blocked: no working free provider.");}}
+            @Override public void error(String error) {
+                MAIN.post(()->{
+                    if(stopped || generation!=taskGeneration)return;
+                    ui.log("Free model request failed: "+error);
+                    close("Blocked: no available free provider responded.");
+                });
+            }
         });
     }
-    private JSONObject extractCall(String text) {
-        try{
-            String cleaned=text.trim();
-            if(cleaned.startsWith(""+'\u0060'+'\u0060'+'\u0060')) {
-                int newline=cleaned.indexOf('\n');
-                if(newline>=0)cleaned=cleaned.substring(newline+1).replaceAll("\u0060{3}\\s*$","").trim();
-            }
-            JSONObject decoded=new JSONObject(cleaned);
-            JSONArray calls=decoded.getJSONArray("tool_calls");
-            if(calls.length()!=1)return null;
-            return calls.getJSONObject(0);
-        }catch(Exception e){return null;}
+    private void handleModelResult(String text,String route) {
+        ui.log("Provider: "+route);
+        AgentProtocol.Result parsed=AgentProtocol.parse(text);
+        if(parsed.error!=null) {
+            ui.log("Invalid model tool response: "+parsed.error);
+            close("Blocked: unsupported tool request; no command was executed.");
+            return;
+        }
+        JSONObject call=parsed.call;
+        if(call==null) {
+            ui.log(text.length()>5000?text.substring(0,5000):text);
+            close(writes>0&&validations==0 ? "Blocked: edited files were not verified."
+              : (requiresAction && writes==0 && validations==0 && "agent".equals(mode)
+                  ? "Blocked: no real project action was observed." : "Response complete."));
+            return;
+        }
+        messages.put(message("assistant",text));
+        run(call);
     }
     private void observed(String tool,String value) {
         if(stopped)return;
