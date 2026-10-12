@@ -11,6 +11,8 @@ import android.text.InputType;
 import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.WindowInsets;
+import android.os.Build;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -91,6 +93,25 @@ public final class M5Activity extends Activity {
     }
     private void buildShell() {
         root=vertical();root.setBackgroundColor(BG);
+        // Android 15/16 enforce edge-to-edge for target SDK 35.
+        // Respect the status bar, navigation bar, cutout, and on-screen keyboard.
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            int left,top,right,bottom;
+            if(Build.VERSION.SDK_INT>=30){
+                android.graphics.Insets bars=insets.getInsets(
+                    WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+                android.graphics.Insets keyboard=insets.getInsets(WindowInsets.Type.ime());
+                left=bars.left;top=bars.top;right=bars.right;
+                bottom=Math.max(bars.bottom,keyboard.bottom);
+            }else{
+                left=insets.getSystemWindowInsetLeft();
+                top=insets.getSystemWindowInsetTop();
+                right=insets.getSystemWindowInsetRight();
+                bottom=insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(left,top,right,bottom);
+            return insets;
+        });
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
         TextView logo=label("M5 NATIVE",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
