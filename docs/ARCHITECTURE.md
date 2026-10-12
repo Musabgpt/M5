@@ -8,7 +8,7 @@ Open-source Android-first coding workbench with functional parity as the goal, n
 
 1. **Android package:** independent M5 debug identifier, one WebView workbench window, official Termux RUN_COMMAND bridge; first-run bootstrap and protected loopback pairing token.
 2. **Node (Termux):** zero-install-dependency HTTP server; bound to 127.0.0.1; state token, cookie session, strict origins, project-root file containment and denylisted secrets/symlinks.
-3. **Editor:** accessible in-window source editing with line numbers, search, undo via browser, atomic-save content hashes, sandboxed HTML preview and read-only Git inspection. **Not a VS Code-equivalent editor yet.**
+3. **Editor:** accessible in-window source editing with line numbers, search, undo via browser, atomic-save content hashes, sandboxed HTML preview and read-only Git inspection. **Optional code-server mode provides the authentic VS Code editor, but the M5 agent is not yet an integrated VS Code extension.**
 4. **Agent:** free route adapter, structured tool-call envelope for text-only LLMs, step budget, explicit per-operation approval, cancellation, filesystem/shell tools and observation-based final status.
 5. **Tests:** Node security, file, provider and consent-loop tests + Android debug compilation workflow.
 
@@ -16,8 +16,8 @@ Open-source Android-first coding workbench with functional parity as the goal, n
 
 - Termux from a supported trusted source; RUN_COMMAND permission and allow-external-apps enabled. Android can stop background work.
 - Free provider routes are not guaranteed online, unlimited or able to return valid tool calls.
-- VS Code parity requires code-server / extension host, real LSP, advanced terminal PTY and tested keyboard support. See https://github.com/coder/code-server/blob/main/docs/termux.md
-- No code-server, VS Code extensions, remote multiagent fleet, checkpoints, hunk patch review UI, or complete agent runtime persistence is verified.
+- Full VS Code parity still requires a verified code-server / extension host integration, real LSP, advanced terminal PTY and tested keyboard support. See https://github.com/coder/code-server/blob/main/docs/termux.md
+- Optional code-server startup and file checkpoints exist. Real-device acceptance, VS Code extension interoperability, remote multiagent fleet, hunk patch review UI and complete agent runtime persistence are not verified.
 - User approves every AI write or command; manual shell commands require confirmation. M5 is not a hardened hostile-code sandbox.
 - Models must not receive local auth tokens, Termux credentials or user secrets.
 
