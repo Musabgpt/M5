@@ -200,8 +200,11 @@ public final class M5Activity extends Activity {
         body.addView(actions);
         if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
         if(!selectedFile.isEmpty()) {
-            editor=input("Code editor",10);editor.setTypeface(Typeface.MONOSPACE);
-            editor.setTextSize(13);editor.setHorizontallyScrolling(true);
+            NativeCodeEditor source=new NativeCodeEditor(this);
+            source.setHint("Write your source code here");
+            source.setFilename(selectedFile);
+            editor=source;
+            editor.setMinLines(10);
             editor.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
             body.addView(editor,new LinearLayout.LayoutParams(-1,0,1));
             body.addView(button("Back to Explorer",()->{selectedFile="";showPanel("files");}));
