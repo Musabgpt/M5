@@ -8,8 +8,8 @@ android {
         applicationId 'com.musabgpt.m5'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '0.7.0-resilient-studio'
+        versionCode 8
+        versionName '0.8.0-history-git'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -17,7 +17,7 @@ android {
     }
     buildTypes {
         release { minifyEnabled false }
-        debug { applicationIdSuffix '.studio7' }
+        debug { applicationIdSuffix '.studio8' }
     }
 }
 

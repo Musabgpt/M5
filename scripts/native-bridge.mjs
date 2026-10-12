@@ -90,6 +90,8 @@ async function write(relative,b64,expected) {
   if(existed && (!expected || sha(original)!==expected))
     fail('Existing file changed or not opened for editing; reload it before saving');
   if(!existed && expected!=='')fail('File did not exist when read; create using an empty expected hash');
+  if(existed && !Buffer.from(original).equals(bytes))
+    await snapshotBeforeWrite(relative,Buffer.from(original));
   const temp=file+'.m5-'+crypto.randomBytes(6).toString('hex');
   try {
     await fs.writeFile(temp,bytes,{flag:'wx',mode:0o600});
@@ -98,6 +100,136 @@ async function write(relative,b64,expected) {
     await fs.rename(temp,file);
   }finally{await fs.rm(temp,{force:true});}
   return {path:relative,hash:sha(bytes),bytes:bytes.length};
+}
+
+
+/**
+ * Offline file checkpoints (NOT Git commits), stored privately under
+ * ~/m5-workspace/.m5/history with a SHA-256 keyed directory per file.
+ * Only prior saved revisions are kept; source code never leaves Termux.
+ */
+const HISTORY_ROOT=path.join(ROOT,'.m5','history');
+const HISTORY_LIMIT=10;
+async function safeDirectory(dir){
+  try{await fs.mkdir(dir,{mode:0o700});}
+  catch(e){if(e.code!=='EEXIST')throw e;}
+  const stat=await fs.lstat(dir);
+  if(!stat.isDirectory()||stat.isSymbolicLink())fail('Unsafe checkpoint directory');
+}
+async function historyFolder(relative,create=false){
+  valid(relative);
+  const key=sha(Buffer.from(relative,'utf8'));
+  if(create){
+    await safeDirectory(path.join(ROOT,'.m5'));
+    await safeDirectory(HISTORY_ROOT);
+    await safeDirectory(path.join(HISTORY_ROOT,key));
+  }else{
+    for(const dir of [path.join(ROOT,'.m5'),HISTORY_ROOT,path.join(HISTORY_ROOT,key)]){
+      try{
+        const stat=await fs.lstat(dir);
+        if(!stat.isDirectory()||stat.isSymbolicLink())fail('Unsafe checkpoint directory');
+      }catch(e){if(e.code==='ENOENT')return null;throw e;}
+    }
+  }
+  return path.join(HISTORY_ROOT,key);
+}
+async function historyEntries(relative) {
+  await target(relative,true); // Validate path and refuse symlinks before history operations.
+  const dir=await historyFolder(relative);
+  if(!dir)return [];
+  const files=(await fs.readdir(dir)).filter(name=>/^[0-9]{13}-[a-f0-9]{10}\.json$/.test(name));
+  const result=[];
+  for(const filename of files){
+    const file=path.join(dir,filename);
+    const stat=await fs.lstat(file);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1500)fail('Invalid checkpoint metadata');
+    let meta;
+    try{meta=JSON.parse(await fs.readFile(file,'utf8'));}
+    catch{fail('Corrupt checkpoint metadata');}
+    if(meta.path!==relative||meta.id+'.json'!==filename||
+       !/^[0-9a-f]{64}$/.test(meta.hash||'')||
+       !Number.isSafeInteger(meta.createdAt)||meta.bytes>MAX_FILE||meta.bytes<0)
+      fail('Invalid checkpoint record');
+    result.push(meta);
+  }
+  result.sort((a,b)=>b.id.localeCompare(a.id));
+  return result;
+}
+async function snapshotBeforeWrite(relative,bytes){
+  const dir=await historyFolder(relative,true);
+  const id=String(Date.now())+'-'+crypto.randomBytes(5).toString('hex');
+  const dataPath=path.join(dir,id+'.txt');
+  const metadataPath=path.join(dir,id+'.json');
+  const meta={id,path:relative,hash:sha(bytes),bytes:bytes.length,createdAt:Date.now()};
+  await fs.writeFile(dataPath,bytes,{flag:'wx',mode:0o600});
+  try{await fs.writeFile(metadataPath,JSON.stringify(meta),{flag:'wx',mode:0o600});}
+  catch(e){await fs.rm(dataPath,{force:true});throw e;}
+  const old=await historyEntries(relative);
+  for(const entry of old.slice(HISTORY_LIMIT)){
+    await fs.rm(path.join(dir,entry.id+'.json'),{force:true});
+    await fs.rm(path.join(dir,entry.id+'.txt'),{force:true});
+  }
+  return meta;
+}
+async function checkpointSource(relative,id){
+  if(typeof id!=='string'||!/^[0-9]{13}-[a-f0-9]{10}$/.test(id))
+    fail('Invalid checkpoint identifier');
+  const matches=await historyEntries(relative);
+  const meta=matches.find(item=>item.id===id);
+  if(!meta)fail('Checkpoint missing or expired');
+  const dir=await historyFolder(relative);
+  const filename=path.join(dir,id+'.txt');
+  const stat=await fs.lstat(filename);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>MAX_FILE)
+    fail('Invalid stored checkpoint content');
+  const bytes=await fs.readFile(filename);
+  if(sha(bytes)!==meta.hash||bytes.length!==meta.bytes)fail('Checkpoint content hash mismatch');
+  return {meta,bytes};
+}
+async function historyList(relative){
+  const current=await read(relative);
+  const entries=await historyEntries(relative);
+  return {path:relative,currentHash:current.hash,entries:entries.slice(0,HISTORY_LIMIT),limit:HISTORY_LIMIT};
+}
+async function historyCompare(relative,id){
+  const current=await read(relative);
+  const saved=await checkpointSource(relative,id);
+  const before=saved.bytes.toString('utf8').split('\n');
+  const after=current.content.split('\n');
+  let changes=[];
+  // Bounded old/new line comparison: diagnostic preview, NOT an exact Git diff.
+  for(let index=0;index<Math.min(Math.max(before.length,after.length),160);index++){
+    const left=before[index],right=after[index];
+    if(left!==right){
+      if(changes.length>=35)break;
+      changes.push({line:index+1,before:(left||'').slice(0,170),after:(right||'').slice(0,170)});
+    }
+  }
+  return {path:relative,id,oldHash:saved.meta.hash,currentHash:current.hash,
+    oldLines:before.length,newLines:after.length,changes,
+    limited:Math.max(before.length,after.length)>160||changes.length>=35,
+    note:'Line-indexed comparison only, not a full unified Git diff'};
+}
+async function historyRestore(relative,id,expectedHash){
+  if(typeof expectedHash!=='string'||!/^[a-f0-9]{64}$/.test(expectedHash))
+    fail('Restoring requires the exact SHA-256 of the current file');
+  const existing=await read(relative);
+  if(existing.hash!==expectedHash)fail('Current source changed: reopen it before restoring');
+  const {meta,bytes}=await checkpointSource(relative,id);
+  const file=await target(relative);
+  if(sha(bytes)===expectedHash)
+    return {path:relative,hash:expectedHash,restoredFrom:id,unchanged:true};
+  // Preserve current revision before restoring so the restore is itself undoable.
+  await snapshotBeforeWrite(relative,Buffer.from(existing.content,'utf8'));
+  const tmp=file+'.m5-restore-'+crypto.randomBytes(6).toString('hex');
+  try{
+    await fs.writeFile(tmp,bytes,{flag:'wx',mode:0o600});
+    const atCommit=await read(relative);
+    if(atCommit.hash!==expectedHash)fail('Current source changed during restore; no changes applied');
+    await fs.rename(tmp,file);
+  }finally{await fs.rm(tmp,{force:true});}
+  return {path:relative,hash:meta.hash,restoredFrom:id,bytes:bytes.length,
+    verification:'SHA-256 content restored; runtime not tested'};
 }
 
 /** Offline user-approved project creation with no API calls or dependencies. */
@@ -226,6 +358,76 @@ async function auditProject(project){
     results,note:'Syntax checks only; not a unit-test suite or proof of runtime correctness'};
 }
 
+
+/** Project-scoped Git, executed as explicit argv, never through shell evaluation. */
+async function safeGitProject(relative){
+  if(typeof relative!=='string'||relative.length<2)fail('Select an existing project folder');
+  const parts=valid(relative);
+  if(parts.length===0)fail('Git requires a named workspace project');
+  const folder=await target(relative);
+  const stat=await fs.lstat(folder);
+  if(!stat.isDirectory()||stat.isSymbolicLink())fail('Git requires a real project directory');
+  try {
+    const gitDir=await fs.lstat(path.join(folder,'.git'));
+    if(gitDir.isSymbolicLink()||!gitDir.isDirectory())
+      fail('Unsupported Git metadata type (worktrees and linked repositories are not changed)');
+  }catch(e){if(e.code!=='ENOENT')throw e;}
+  return folder;
+}
+async function gitProcess(relative,args,timeout=12000){
+  const folder=await safeGitProject(relative);
+  const env=Object.fromEntries(
+    ['PATH','HOME','TMPDIR','LANG','TERM'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])
+  );
+  env.GIT_CONFIG_NOSYSTEM='1';
+  env.GIT_CONFIG_GLOBAL='/dev/null';
+  return await new Promise((resolve,reject)=>{
+    let stdout='',stderr='',truncated=false,timedOut=false,done=false;
+    const safeArgs=['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',...args];
+    const proc=spawn('git',safeArgs,{cwd:folder,env,stdio:['ignore','pipe','pipe']});
+    for(const [stream,name] of [[proc.stdout,'stdout'],[proc.stderr,'stderr']]){
+      stream.on('data',chunk=>{
+        const current=name==='stdout'?stdout:stderr;
+        const next=current+chunk.toString('utf8');
+        if(next.length>16000)truncated=true;
+        if(name==='stdout')stdout=next.slice(0,16000);
+        else stderr=next.slice(0,5000);
+      });
+    }
+    const timer=setTimeout(()=>{timedOut=true;proc.kill('SIGKILL');},timeout);
+    proc.once('error',error=>{
+      if(done)return;done=true;clearTimeout(timer);
+      reject(new Error(error.code==='ENOENT'?'Git is not installed in Termux':error.message));
+    });
+    proc.once('close',(exitCode,signal)=>{
+      if(done)return;done=true;clearTimeout(timer);
+      resolve({project:relative,command:'git '+args.join(' '),exitCode,signal,
+        success:exitCode===0&&!timedOut,timedOut,truncated,stdout,stderr});
+    });
+  });
+}
+async function gitProjectStatus(relative){
+  const result=await gitProcess(relative,['status','--porcelain=v1','--untracked-files=normal'],12000);
+  return {...result,note:'Project-local Git status. No fetch, push or network.'};
+}
+async function gitProjectDiff(relative){
+  const result=await gitProcess(relative,['diff','--no-ext-diff','--unified=3','--'],12000);
+  return {...result,note:'Tracked unstaged changes only. Untracked files are not included.'};
+}
+async function gitProjectInit(relative){
+  const folder=await safeGitProject(relative);
+  const existing=await fs.readdir(folder);
+  if(existing.includes('.git'))fail('This folder already has a Git repository');
+  const result=await gitProcess(relative,['init','--initial-branch=main'],15000);
+  if(!result.success)fail('Git init failed: '+result.stderr.slice(0,300));
+  const ignore=path.join(folder,'.gitignore');
+  const ignores='node_modules/\ndist/\nbuild/\n.env\n.env.*\n*.pem\n*.key\n*.p12\n*.keystore\n.m5/\n';
+  try{await fs.writeFile(ignore,ignores,{flag:'wx',mode:0o600});}
+  catch(e){if(e.code!=='EEXIST')throw e;}
+  return {project:relative,created:true,gitignoreCreated:!existing.includes('.gitignore'),
+    note:'Initialized local Git only. No commit, push, account login, or network operation was performed.'};
+}
+
 async function main(){
   await fs.mkdir(ROOT,{recursive:true,mode:0o700});
   const [verb,...args]=process.argv.slice(2);
@@ -238,6 +440,12 @@ async function main(){
     case 'run_file':data=await sourceCommand('run',args[0],args[1]);break;
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
+    case 'history_list':data=await historyList(args[0]);break;
+    case 'git_project_status':data=await gitProjectStatus(args[0]);break;
+    case 'git_project_diff':data=await gitProjectDiff(args[0]);break;
+    case 'git_project_init':data=await gitProjectInit(args[0]);break;
+    case 'history_compare':data=await historyCompare(args[0],args[1]);break;
+    case 'history_restore':data=await historyRestore(args[0],args[1],args[2]);break;
     case 'write':data=await write(args[0],args[1],args[2]);break;
     case 'search':{
       const q=String(args[0]||'').toLowerCase();

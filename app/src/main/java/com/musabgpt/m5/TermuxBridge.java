@@ -87,7 +87,7 @@ public final class TermuxBridge {
 
     public void tool(String action, String[] arguments, Callback callback) {
         if (!isConnected()) { callback.failed("Termux is offline. Use Connect Termux in the app header."); return; }
-        if (!action.matches("ping|list|read|write|search|git_status|git_diff|shell|scaffold|check_file|run_file|audit_project")) {
+        if (!action.matches("ping|list|read|write|search|git_status|git_diff|shell|scaffold|check_file|run_file|audit_project|history_list|history_compare|history_restore|git_project_status|git_project_diff|git_project_init")) {
             callback.failed("Unknown Termux action");
             return;
         }
