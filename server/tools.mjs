@@ -8,6 +8,7 @@ export const TOOL_SPECS = Object.freeze({
   list_files: { risk: 'read', required: [], props: { path: 'string' } },
   read_file: { risk: 'read', required: ['path'], props: { path: 'string' } },
   search_code: { risk: 'read', required: ['query'], props: { query: 'string' } },
+  code_context: { risk: 'read', required: ['query'], props: { query: 'string' } },
   git_status: { risk: 'read', required: [], props: {} },
   git_diff: { risk: 'read', required: [], props: {} },
   write_file: { risk: 'write', required: ['path', 'content'], props: { path: 'string', content: 'string', expectedHash: 'string' } },
@@ -67,7 +68,7 @@ async function save(workspace, name, content, expectedHash) {
     return { path: name, sha256: sha256(content), bytes: Buffer.byteLength(content) };
   } finally { await fs.rm(temp, { force: true }); }
 }
-export async function invokeTool(workspace, name, args, { signal } = {}) {
+export async function invokeTool(workspace, name, args, { signal, contextIndex } = {}) {
   validateCall(name, args);
   switch (name) {
     case 'list_files': return { entries: await enumerate(workspace, args.path || '') };
@@ -84,6 +85,10 @@ export async function invokeTool(workspace, name, args, { signal } = {}) {
         if (matches.length >= 100) break;
       }
       return { matches, truncated: matches.length >= 100 };
+    }
+    case 'code_context': {
+      if (!contextIndex) throw new Error('Context index is not configured');
+      return contextIndex.query(args.query);
     }
     case 'git_status': return runProcess('git', ['status', '--short'], workspace, { timeoutMs: 10000, signal });
     case 'git_diff': return runProcess('git', ['diff', '--no-ext-diff', '--'], workspace, { timeoutMs: 10000, signal, maxOutput: 90_000 });
