@@ -297,7 +297,7 @@ public final class M5Activity extends Activity {
             EditText model=input("Model ID",1);
             model.setSingleLine(true);model.setText(models.getModel(i));body.addView(model);
             body.addView(button("Save "+FreeModels.FAMILIES[i],()->{
-                try{models.configure(id,url.getText().toString().trim(),model.getText().toString().trim());toast("Saved encrypted transport configuration");}
+                try{models.configure(id,url.getText().toString().trim(),model.getText().toString().trim());toast("Saved provider configuration");}
                 catch(Exception e){showError("Invalid gateway",e.getMessage());}
             }));
         }
