@@ -21,8 +21,8 @@ export class ContextIndex {
   }
 
   static terms(text) {
-    return [...new Set(String(text).toLowerCase()
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
+    return [...new Set(String(text)
+      .replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
       .split(/[^\p{L}\p{N}_$]+/u).flatMap(word => word.split(/[_$]+/))
       .filter(word => word.length >= 2 && word.length <= 48))].slice(0, 40);
   }
