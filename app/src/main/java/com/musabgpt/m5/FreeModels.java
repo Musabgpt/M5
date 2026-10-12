@@ -222,8 +222,11 @@ public final class FreeModels {
             throw new IllegalArgumentException("Non-HTTPS gateway rejected");
         HttpURLConnection conn=(HttpURLConnection)url.openConnection();
         conn.setInstanceFollowRedirects(false);
-        conn.setConnectTimeout((int)Math.min(4500,Math.max(1000,remainingMs)));
-        conn.setReadTimeout((int)Math.min(8500,Math.max(1000,remainingMs)));
+        int connectMs=(int)Math.min(4500,Math.max(1000,remainingMs/3));
+        int readMs=(int)Math.min(8500,Math.max(1000,remainingMs-connectMs-500));
+        conn.setConnectTimeout(connectMs);
+        conn.setReadTimeout(readMs);
+        long deadline=SystemClock.elapsedRealtime()+Math.min(remainingMs,21_000L);
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Accept","application/json");
         conn.setRequestProperty("Content-Type","application/json");
@@ -232,6 +235,7 @@ public final class FreeModels {
         // Create a provider-specific envelope without changing the frozen conversation.
         JSONObject body=new JSONObject(serialized);
         body.put("model",model.isEmpty()?"auto":model);
+        body.put("max_tokens",1600); // bounded output: free quotas are finite
         byte[] data=body.toString().getBytes(StandardCharsets.UTF_8);
         if(data.length>100000)throw new IllegalStateException("Task context exceeds 100 KB");
         try {
@@ -243,7 +247,11 @@ public final class FreeModels {
             try(InputStream input=conn.getInputStream()){
                 java.io.ByteArrayOutputStream buffer=new java.io.ByteArrayOutputStream();
                 byte[] part=new byte[4096];int n;
-                while((n=input.read(part))!=-1){
+                while(true){
+                    if(SystemClock.elapsedRealtime()>deadline)
+                        throw new SocketTimeoutException("Bounded provider response deadline exceeded");
+                    n=input.read(part);
+                    if(n==-1)break;
                     buffer.write(part,0,n);
                     if(buffer.size()>250000)throw new IllegalStateException("Response limit reached");
                 }
