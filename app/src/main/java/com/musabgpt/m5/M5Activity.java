@@ -170,7 +170,7 @@ public final class M5Activity extends Activity {
             return insets;
         });
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
-        TextView logo=label("M5 AEOS 0.9",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
+        TextView logo=label("M5 MESH 0.10",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
         connection=label("↻ Connect Termux",13,ACCENT);
         connection.setContentDescription("Connect M5 to Termux tools");
@@ -1009,7 +1009,7 @@ public final class M5Activity extends Activity {
     }
     private void showProviders(){
         caption("FREE AI PROVIDERS");
-        info("Direct HTTPS. Public free gateways can be unavailable or rate-limited; optional free-plan keys are encrypted locally.");
+        info("Direct HTTPS · rate-limit failover. Free tiers have limits. Hugging Face credits are small and may incur costs if paid billing is enabled on your account; select it only after verifying account billing.");
         ScrollView settings=new ScrollView(this);
         LinearLayout items=vertical();
         settings.addView(items);

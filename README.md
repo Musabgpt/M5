@@ -110,3 +110,21 @@ This is an implemented **partial** AEOS engineering milestone, not a literal or 
 - **Restricted AI command execution:** generic Shell calls only admit a small set of status, known test and explicit Termux package installation commands; arbitrary destructive shell metacharacters and privilege escalation requests are refused. Source execution remains user-approved and still runs with the Termux app's normal permissions.
 
 See [AEOS implementation, limits and acceptance](docs/AEOS_ENGINEERING.md) and the existing device verification guides. Real Samsung physical-device acceptance and a full Chromium/CDP integration are outstanding. Full LSP/typed AST refactor, visual screenshot diffs, parallel worktrees and autonomous Git promotion remain future engineering work.
+
+## M5 Mesh 0.10 — resilient free-tier inference
+
+**Branch:** `feat/aeos-v10-resilient-free-mesh` · [PR #8](https://github.com/Musabgpt/M5/pull/8).
+**App:** `com.musabgpt.m5.mesh10` installs beside prior debug APKs without replacing their local data.
+
+- **Bounded failover across selected free route and anonymous public endpoints.** Exactly the same serialized model conversation is sent when switching routes; failed requests are not reported as tool execution. Each selected configured provider is opt-in, and no proprietary paid model is silently substituted.
+- **429:** immediate provider quarantine, 30-second default, honoring a valid `Retry-After` response up to 1 hour. **503/502/504 or DNS/socket timeouts:** one retry after 1 second and another after 2 seconds, then switch provider; retrying is bounded by a 60-second total inference budget. **404/auth/402:** fail closed and quarantine rather than repeat.
+- **Health-aware route selection** based on observed successes, failures and latency; eligible public routes are tried by score. `[Mesh]` status messages and history are shown inside the existing Agent trace and AEOS Mesh Dashboard without exposing user keys, prompt contents or raw error responses.
+- **Context budget:** preserve the model request payload as a frozen serialized message body across a failover; agent context trimming occurs before the first request, not midway through handoff. Outgoing response length is capped at 1600 model tokens via the standard compatible request field; actual quotas and provider support vary.
+- **Deterministic offline fallback:** when remote inference fails, for an explicit request to create an HTML calculator or a simple Python/Node starter, the agent can offer an already bundled Termux template. User consent is required, existing projects are not overwritten, and the result only claims file generation and the syntax check actually performed.
+- **Hugging Face Inference Providers** is an optional user-keyed route with the OpenAI-compatible `https://router.huggingface.co/v1/chat/completions` endpoint. The Free user's monthly included credit is small and can change. Paid use may be possible if configured on the user's account; do not activate it without verifying billing settings. No automatic payment, top-up, plan upgrade or paid route switching is performed by M5.
+
+### Honest engineering limits
+
+No mobile process can be guaranteed never to crash, and network failover cannot be guaranteed within 150ms. The *decision to switch* after a 429 happens locally without a retry delay, but the next network call has its own latency. Free endpoints can be unavailable, change terms or reject requests. The local fallback deliberately supports only safe, predetermined templates; it cannot finish arbitrary tasks without a model. API keys are encrypted at rest with Android Keystore, not guaranteed to reside exclusively in volatile RAM. Android Accessibility actions still require user opt-in. GitHub Actions success is not physical-device acceptance.
+
+[Implementation and device checks](docs/FREE_MESH.md).
