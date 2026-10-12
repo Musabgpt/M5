@@ -122,7 +122,7 @@ public final class TermuxBridge {
             if (value != null) original = String.valueOf(value);
         }
         try {
-            if (!original.isEmpty() && Integer.parseInt(original) > stdout.length()) {
+            if (!original.isEmpty() && Integer.parseInt(original) > Math.max(stdout.length(), stdout.getBytes(java.nio.charset.StandardCharsets.UTF_8).length)) {
                 callback.failed("Termux output was truncated; no data was accepted.");
                 return;
             }
