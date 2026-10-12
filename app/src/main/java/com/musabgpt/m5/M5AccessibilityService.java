@@ -125,7 +125,7 @@ public final class M5AccessibilityService extends AccessibilityService {
             item.put("class",shortText(node.getClassName(),45));
             // Password fields, input values and OTP-like content are never shared.
             item.put("label",node.isPassword()?"[REDACTED PASSWORD]":shortText(node.getText(),110));
-            item.put("description",shortText(node.getContentDescription(),75));
+            item.put("description",node.isPassword()?"[REDACTED]":shortText(node.getContentDescription(),75));
             item.put("clickable",node.isClickable()).put("editable",node.isEditable()&&!node.isPassword())
                 .put("scrollable",node.isScrollable());
             Rect bounds=new Rect();node.getBoundsInScreen(bounds);
