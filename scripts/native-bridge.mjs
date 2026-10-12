@@ -152,7 +152,7 @@ async function command(value,timeout=30000) {
  * selected workspace file. No shell interpolation. Running code can still
  * access the Termux user's files/network; the Android UI requires consent.
  */
-async function sourceCommand(mode,relative,expectedHash){
+async function sourceCommand(mode,relative,expectedHash,timeoutOverride){
   const filename=await target(relative);
   const stat=await fs.stat(filename);
   if(!stat.isFile()||stat.size>MAX_FILE)fail('Select a regular text source file smaller than 40 KB');
@@ -179,7 +179,7 @@ async function sourceCommand(mode,relative,expectedHash){
   const env=Object.fromEntries(
     ['PATH','HOME','TMPDIR','LANG','TERM'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])
   );
-  const timeout=mode==='check'?15000:30000;
+  const timeout=timeoutOverride|| (mode==='check'?15000:30000);
   return await new Promise((resolve,reject)=>{
     let stdout='',stderr='',truncated=false,timedOut=false,finished=false;
     const child=spawn(commandName,args,{cwd,env,stdio:['ignore','pipe','pipe']});
@@ -213,7 +213,7 @@ async function auditProject(project){
   const results=[];
   for(const file of sample){
     try{
-      const found=await sourceCommand('check',file.path);
+      const found=await sourceCommand('check',file.path,undefined,4000);
       results.push({path:file.path,success:found.success,exitCode:found.exitCode,
         error:found.stderr.slice(0,550),timedOut:found.timedOut});
     }catch(e){
