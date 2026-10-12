@@ -550,19 +550,42 @@ public final class M5Activity extends Activity {
 
     private void saveFile(){
         if(editor==null||selectedFile.isEmpty())return;
-        String data=editor.getText().toString();
-        if(data.getBytes(StandardCharsets.UTF_8).length>40000){showError("Save","The direct bridge supports source files up to 40KB.");return;}
-        String encoded=Base64.encodeToString(data.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
+        final String path=editorFile;
+        final String contents=editor.getText().toString();
+        final String expectedHash=originalHash;
+        if(contents.getBytes(StandardCharsets.UTF_8).length>40000){
+            showError("Save","Source file exceeds 40 KB. No files were changed.");return;
+        }
+        String encoded=Base64.encodeToString(contents.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
         status("● Saving…");
-        termux.tool("write",new String[]{selectedFile,encoded,originalHash},new TermuxBridge.Callback(){
-            @Override public void finished(JSONObject result){
-                originalHash=result.optString("hash",originalHash);
-                lastSavedContent=data;
-                if(editor!=null && data.equals(editor.getText().toString()))unsavedDrafts.remove(selectedFile);
+        termux.tool("write",new String[]{path,encoded,expectedHash},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject receipt){
+                String newHash=receipt.optString("hash","");
+                if(newHash.isEmpty()){
+                    showError("Save not verified","Termux did not confirm the content hash");
+                    return;
+                }
+                if(path.equals(selectedFile)){
+                    originalHash=newHash;
+                    lastSavedContent=contents;
+                    if(editor!=null && path.equals(editorFile) &&
+                        !contents.equals(editor.getText().toString())){
+                        persistVisibleDraft();
+                    }else if(!unsavedDrafts.containsKey(path)||
+                        contents.equals(unsavedDrafts.get(path))){
+                        unsavedDrafts.remove(path);
+                        try{draftVault.remove(path);}catch(Exception error){
+                            toast("File saved; encrypted draft cleanup failed");
+                        }
+                    }
+                }
                 status("● Termux ready");
-                toast("Saved "+selectedFile);
+                toast("Saved "+path);
             }
-            @Override public void failed(String error){status("● Save blocked");showError("File not saved",error);}
+            @Override public void failed(String error){
+                status("● Save blocked");
+                showError("File not saved",error);
+            }
         });
     }
     private void showAgent(){
