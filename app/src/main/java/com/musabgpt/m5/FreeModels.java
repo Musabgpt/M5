@@ -33,7 +33,7 @@ public final class FreeModels {
     private static final ExecutorService NETWORK=Executors.newSingleThreadExecutor();
     private final SharedPreferences prefs;
     private final SecureKeys keys;
-    // 0–3 anonymous routes; 5–10 optional, explicitly configured families.
+    // 0–3 anonymous routes; 5–11 optional, explicitly configured families.
     private final ProviderMesh mesh=new ProviderMesh(12);
     private final MeshFailover orchestrator=new MeshFailover(mesh);
     private final ArrayDeque<String> recentEvents=new ArrayDeque<>();
@@ -51,17 +51,20 @@ public final class FreeModels {
     };
     public static final String[] FAMILIES = {
         "FreeLLMPool","GPT4Free","Free LLM Gateway","Free LLM API",
-        "Groq Free (API key)","OpenRouter Free (API key)","Google AI Studio Free (API key)"
+        "Groq Free (API key)","OpenRouter Free (API key)","Google AI Studio Free (API key)",
+        "Hugging Face limited free credits (API key)"
     };
     private static final String[] OFFICIAL_URLS = {
         "","","","",
         "https://api.groq.com/openai/v1/chat/completions",
         "https://openrouter.ai/api/v1/chat/completions",
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "https://router.huggingface.co/v1/chat/completions"
     };
     private static final String[] OFFICIAL_MODELS = {
         "","","","",
-        "openai/gpt-oss-120b","openrouter/free","gemini-2.5-flash"
+        "openai/gpt-oss-120b","openrouter/free","gemini-2.5-flash",
+        "openai/gpt-oss-120b:fastest"
     };
     public FreeModels(Context context) {
         prefs=context.getSharedPreferences("m5-provider",Context.MODE_PRIVATE);
