@@ -90,7 +90,19 @@ async function updateJob() {
   $('agent-stop').disabled = !['running','approval'].includes(job.status);
   if (job.pending) {
     state.approval = job.pending;
-    $('approval-detail').textContent = JSON.stringify(job.pending, null, 2);
+    const pre = $('approval-detail');
+    pre.replaceChildren();
+    const heading = element('div', { className:'approval-operation' }, job.pending.name + ' · ' + (job.pending.path || job.pending.command || ''));
+    pre.append(heading);
+    if (job.pending.diff) {
+      for (const line of job.pending.diff.split('\n')) {
+        const kind = line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-del' : line.startsWith('@@') ? 'diff-hunk' : '';
+        const row = element('span', { className:kind }, line);
+        pre.append(row, document.createTextNode('\n'));
+      }
+    } else {
+      pre.append(document.createTextNode(job.pending.preview || JSON.stringify(job.pending, null, 2)));
+    }
     $('approval').hidden = false;
   } else { state.approval = null; $('approval').hidden = true; }
   if (!['running','approval'].includes(job.status)) {
