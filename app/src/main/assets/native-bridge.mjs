@@ -85,7 +85,11 @@ async function write(relative,b64,expected) {
     existed=true;
     original=await fs.readFile(file);
   }catch(e){if(e.code!=='ENOENT')throw e;}
-  if(sha(original)!==expected && !(existed===false && expected===''))fail('File changed since it was read; reload before saving');
+  // Empty expectedHash means CREATE-ONLY. SHA-256 means UPDATE of a file
+  // explicitly read before editing. Never clobber pre-existing empty files.
+  if(existed && (!expected || sha(original)!==expected))
+    fail('Existing file changed or not opened for editing; reload it before saving');
+  if(!existed && expected!=='')fail('File did not exist when read; create using an empty expected hash');
   const temp=file+'.m5-'+crypto.randomBytes(6).toString('hex');
   try {
     await fs.writeFile(temp,bytes,{flag:'wx',mode:0o600});

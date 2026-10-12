@@ -20,7 +20,7 @@ test('one-shot Termux bridge creates/reads/edits projects without HTTP',async()=
     assert.equal(ping.status,0);
     assert.equal(ping.body.runtime,'native-termux');
     const first=Buffer.from('print("hello")\n','utf8').toString('base64');
-    const created=tool(dir,'write','hello.py',first,hash(''));
+    const created=tool(dir,'write','hello.py',first,'');
     assert.equal(created.body.ok,true,created.stderr);
     const read=tool(dir,'read','hello.py');
     assert.equal(read.body.content,'print("hello")\n');
@@ -46,7 +46,7 @@ test('native bridge refuses traversal, sensitive paths, symlinks and oversize fi
     for(const name of ['../bad.txt','/etc/passwd','.env','escape.txt','.git/config']){
       assert.equal(tool(dir,'read',name).body.ok,false,name);
     }
-    const huge=tool(dir,'write','huge.py',Buffer.alloc(41000,65).toString('base64'),hash(''));
+    const huge=tool(dir,'write','huge.py',Buffer.alloc(41000,65).toString('base64'),'');
     assert.equal(huge.body.ok,false);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
