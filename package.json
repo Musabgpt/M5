@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server/index.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check server/index.mjs && node --check server/agent.mjs && node --check server/tools.mjs && node --check web/app.js && node --check web/editor-src.js",
+    "check": "node --check server/index.mjs && node --check server/agent.mjs && node --check server/tools.mjs && node --check web/app.js && node --check web/editor-src.js && bash -n scripts/termux-bootstrap.sh",
     "build": "esbuild web/editor-src.js --bundle --minify --format=esm --outfile=web/editor.bundle.js"
   },
   "dependencies": {
