@@ -92,9 +92,11 @@ public final class M5Activity extends Activity {
     private void buildShell() {
         root=vertical();root.setBackgroundColor(BG);
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
-        TextView logo=label("M5  /  NATIVE",18,ACCENT);logo.setTypeface(null,Typeface.BOLD);
+        TextView logo=label("M5 NATIVE",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
-        connection=label("● Offline",12,MUTED);
+        connection=label("↻ Connect Termux",13,ACCENT);
+        connection.setContentDescription("Connect M5 to Termux tools");
+        connection.setOnClickListener(v->connectTermux());
         toolbar.addView(connection);
         root.addView(toolbar);
         HorizontalScrollView scroller=new HorizontalScrollView(this);
@@ -122,14 +124,14 @@ public final class M5Activity extends Activity {
               .setNegativeButton("Cancel",null).show();
             return;
         }
-        status("● Connecting…");
+        status("⌛ Termux…");
         termux.setup(new TermuxBridge.Callback(){
             @Override public void finished(JSONObject data){
                 connected=data.optBoolean("ready",false);
-                status(connected?"● Termux ready":"● Termux error");
+                status(connected?"● Termux ready":"↻ Connect Termux");
                 if(connected){showPanel(activePanel);toast("Termux ready — no local server");}
             }
-            @Override public void failed(String error){connected=false;status("● Disconnected");showError("Termux setup",error);}
+            @Override public void failed(String error){connected=false;status("↻ Connect Termux");showError("Termux setup",error);}
         });
     }
     @Override public void onRequestPermissionsResult(int req,String[] permissions,int[] results){
@@ -222,7 +224,7 @@ public final class M5Activity extends Activity {
     }
     private void showAgent(){
         caption("AI CODING AGENT");
-        info("Direct HTTPS free models · local files through Termux intents · no localhost.");
+        info("AI chat uses direct HTTPS. For coding tools tap Connect Termux above. No local server.");
         chatScroll=new ScrollView(this);chatLog=vertical();
         for(String text:feed)chatLog.addView(messageView(text));
         chatScroll.addView(chatLog);
