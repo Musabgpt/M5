@@ -2,6 +2,7 @@ package com.musabgpt.m5;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.provider.Settings;
@@ -68,9 +69,38 @@ public final class PhoneTools {
         activity.startActivity(intent);
         return new JSONObject().put("executed",true).put("app",requested).put("package",pkg);
     }
+    public JSONObject openUrl(String requested) throws Exception {
+        if(requested==null||requested.length()>1000)throw new IllegalArgumentException("URL too long");
+        Uri uri=Uri.parse(requested);
+        if(!"https".equalsIgnoreCase(uri.getScheme())||uri.getHost()==null||uri.getHost().isEmpty())
+            throw new IllegalArgumentException("Only HTTPS websites can be opened");
+        activity.startActivity(new Intent(Intent.ACTION_VIEW,uri));
+        return new JSONObject().put("executed",true).put("action","browser_open").put("host",uri.getHost());
+    }
+    public JSONObject dial(String requested) throws Exception {
+        if(requested==null||!requested.matches("[+0-9 ()-]{2,35}"))
+            throw new IllegalArgumentException("Invalid telephone number");
+        String digits=requested.replaceAll("[^+0-9]","");
+        activity.startActivity(new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+digits)));
+        // Opens the dialer UI; does NOT place the call.
+        return new JSONObject().put("executed",true).put("action","dialer_draft");
+    }
+    public JSONObject smsDraft(String number,String body) throws Exception {
+        if(number==null||!number.matches("[+0-9 ()-]{2,35}")||body==null||body.length()>700)
+            throw new IllegalArgumentException("Invalid SMS draft");
+        Intent intent=new Intent(Intent.ACTION_SENDTO,Uri.parse("smsto:"+number.replaceAll("[^+0-9]","")));
+        intent.putExtra("sms_body",body);
+        activity.startActivity(intent);
+        // Only creates a draft. User must manually confirm Send in their SMS app.
+        return new JSONObject().put("executed",true).put("action","sms_draft_created")
+            .put("sent",false);
+    }
     public JSONObject run(String tool,JSONObject args) throws Exception {
         if("phone_apps".equals(tool))return apps();
         if("phone_open".equals(tool))return open(args.optString("app",""));
+        if("phone_open_url".equals(tool))return openUrl(args.optString("url",""));
+        if("phone_dial".equals(tool))return dial(args.optString("number",""));
+        if("phone_sms_draft".equals(tool))return smsDraft(args.optString("number",""),args.optString("text",""));
         M5AccessibilityService svc=M5AccessibilityService.active();
         if(svc==null)throw new IllegalStateException(
             "Enable M5 Native accessibility service manually in Android Settings; the app cannot grant itself this access.");
