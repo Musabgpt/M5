@@ -235,13 +235,42 @@ public final class M5Activity extends Activity {
         if(connected)action.run();
         else showError("Termux not connected","Tap ↻ Termux in the top bar to start direct command access. The editor is native and does not depend on localhost.");
     }
+    private void persistVisibleDraft(){
+        if(editor==null||editorFile.isEmpty())return;
+        String path=editorFile;
+        String contents=editor.getText().toString();
+        try {
+            if(contents.equals(lastSavedContent)){
+                unsavedDrafts.remove(path);
+                draftVault.remove(path);
+            }else{
+                unsavedDrafts.put(path,contents);
+                draftVault.put(path,contents,originalHash);
+            }
+        }catch(Exception error){
+            toast("Draft not saved to disk: "+error.getMessage());
+        }
+    }
     private void rememberDraft(){
-        if(!"files".equals(activePanel)||selectedFile.isEmpty()||editor==null)return;
-        if(editor.getParent()==null)return;
-        String now=editor.getText().toString();
-        if(now.equals(lastSavedContent))unsavedDrafts.remove(selectedFile);
-        else unsavedDrafts.put(selectedFile,now);
+        autosaveHandler.removeCallbacks(autosaveTask);
+        if(editor==null||editorFile.isEmpty())return;
+        persistVisibleDraft();
         editor=null;
+        editorFile="";
+    }
+    private void showSavedDrafts(){
+        try{
+            ArrayList<String> paths=draftVault.paths();
+            if(paths.isEmpty()){showError("Saved drafts","No unsaved drafts stored.");return;}
+            new AlertDialog.Builder(this).setTitle("Recover encrypted drafts")
+                .setItems(paths.toArray(new String[0]),(dialog,index)->{
+                    if(!connected){
+                        showError("Termux required","Connect Termux, then recover this file so its current version can be checked.");
+                        return;
+                    }
+                    openFile(paths.get(index));
+                }).setNegativeButton("Close",null).show();
+        }catch(Exception error){showError("Draft recovery",error.getMessage());}
     }
     private void sourceAction(boolean execute){
         if(selectedFile.isEmpty()||editor==null)return;
