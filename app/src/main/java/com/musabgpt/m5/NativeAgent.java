@@ -54,8 +54,28 @@ public final class NativeAgent {
         taskGeneration++;
         active=true;stopped=false;steps=0;writes=0;validations=0;phoneActions=0;consentedScreenRead=false;
         family=selectedFamily;mode=requestedMode;
-        requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل).*");
-        if("agent".equals(mode) && requiresAction && !termux.isConnected()) {
+        requiresAction=goal.matches("(?is).*(create|build|fix|write|modify|implement|test|execute|generate|install|open|launch|click|tap|scroll|اكتب|انشئ|أنشئ|اصلح|صلح|نفذ|ابن|طور|عدّل|عدل|افتح|اضغط|شغل|مرر).*");
+        // Explicit, simple app-launch requests are handled by Android, not an unreliable model.
+        java.util.regex.Matcher open=java.util.regex.Pattern.compile(
+            "^\\s*(?:افتح|افتحلي|شغل|شغّل|open|launch)\\s+([\\p{L}\\p{N} ._-]{2,90})\\s*$",
+            java.util.regex.Pattern.CASE_INSENSITIVE).matcher(goal);
+        if("agent".equals(mode) && open.matches()) {
+            String app=open.group(1).trim();
+            ui.log("Opening "+app+" directly through Android...");
+            try {
+                JSONObject result=phone.open(app);
+                if(result.optBoolean("executed",false)) {
+                    phoneActions++;
+                    ui.log("Android launcher dispatched: "+result.optString("package",app));
+                    close("App launch dispatched; verify the app is visible.");
+                } else close("Blocked: Android did not open the app.");
+            }catch(Exception error){
+                ui.log("Launcher error: "+error.getMessage());
+                close("Blocked: the app could not be launched.");
+            }
+            return;
+        }
+        if("agent".equals(mode) && requiresAction && !termux.isConnected() && !phone.accessibilityReady() && !phoneRequest(goal)) {
             ui.log("Coding tools are offline. Connect Termux from the top bar before running project tasks.");
             close("Blocked: Termux is not connected. No model request or tool execution was made.");
             return;
@@ -67,6 +87,9 @@ public final class NativeAgent {
           "\nAGENT MODE: inspect, edit with approval, validate with a real test.")));
         ui.log("M5 native "+mode+" started. Tools run only through Termux.");
         advance();
+    }
+    private boolean phoneRequest(String goal) {
+        return goal.matches("(?is).*(واتس|whatsapp|يوتيوب|youtube|تليجرام|telegram|كروم|chrome|التطبيق|الشاشة|الشاشه|الهاتف|phone|app|click|tap|scroll|افتح|اضغط).*");
     }
     void stop(){taskGeneration++;stopped=true;active=false;ui.finished("Stopped by user.");}
     private JSONObject message(String role,String content){
