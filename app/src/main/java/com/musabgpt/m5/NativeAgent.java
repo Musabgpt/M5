@@ -27,6 +27,7 @@ public final class NativeAgent {
     private String latestUserMessage="";
     private int family=0,steps=0,writes=0,validations=0,phoneActions=0;
     private String mode="plan";
+    private String phase="IDLE",providerRoute="not selected";
     private boolean stopped=false,active=false,requiresAction=false,requiresWrite=false;
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     private int taskGeneration=0;
@@ -61,6 +62,7 @@ public final class NativeAgent {
     void start(String goal,int selectedFamily,String requestedMode) {
         if(active){ui.log("Another task is already running.");return;}
         taskGeneration++;
+        phase="PREPARING";providerRoute="pending";
         active=true;stopped=false;steps=0;writes=0;validations=0;phoneActions=0;consentedScreenRead=false;
         family=selectedFamily;mode=requestedMode;
         latestUserMessage=goal;
@@ -118,6 +120,15 @@ public final class NativeAgent {
     private boolean phoneRequest(String goal) {
         return goal.matches("(?is).*(واتس|whatsapp|يوتيوب|youtube|تليجرام|telegram|كروم|chrome|التطبيق|الشاشة|الشاشه|الهاتف|phone|app|click|tap|scroll|افتح|اضغط).*");
     }
+    String statusReport(){
+        int estimated=ContextBudget.estimateTokens(ContextBudget.pack(messages));
+        return "AEOS agent phase: "+phase+"\\n"+
+            "Active: "+active+"\\nMode: "+mode+"\\nProvider: "+providerRoute+
+            "\\nReasoning steps: "+steps+" / 12"+
+            "\\nVerified writes: "+writes+"\\nVerification events: "+validations+
+            "\\nPhone actions: "+phoneActions+
+            "\\nApprox. context tokens: "+estimated+" (heuristic; not model billing)";
+    }
     void clearConversation(){
         if(active)stop();
         conversation.clear();
@@ -129,19 +140,20 @@ public final class NativeAgent {
         conversation.add(message("assistant",answer.substring(0,Math.min(3000,answer.length()))));
         while(conversation.size()>12)conversation.remove(0);
     }
-    void stop(){taskGeneration++;stopped=true;active=false;ui.finished("Stopped by user.");}
+    void stop(){taskGeneration++;stopped=true;active=false;phase="INTERRUPTED";ui.finished("Stopped by user.");}
     private JSONObject message(String role,String content){
         JSONObject obj=new JSONObject();
         try{obj.put("role",role);obj.put("content",content);}catch(Exception ignored){}
         return obj;
     }
-    private void close(String status){active=false;ui.finished(status);}
+    private void close(String status){taskGeneration++;stopped=true;active=false;phase=status.startsWith("Blocked:")?"BLOCKED":"FINISHED";ui.finished(status);}
     private void advance() {
         if(stopped || !active)return;
         if(++steps>12){close("Blocked: 12-step limit reached without verified completion.");return;}
         final int generation=taskGeneration;
+        phase="MODEL_INFERENCE";
         ui.log("Reasoning step "+steps);
-        models.complete(messages,family,new FreeModels.Callback(){
+        models.complete(ContextBudget.pack(messages),family,new FreeModels.Callback(){
             @Override public void success(String text,String route) {
                 MAIN.post(()->{if(!stopped && generation==taskGeneration)handleModelResult(text,route);});
             }
@@ -155,6 +167,7 @@ public final class NativeAgent {
         });
     }
     private void handleModelResult(String text,String route) {
+        providerRoute=route;phase="DECIDE_TOOL";
         ui.log("Provider: "+route);
         AgentProtocol.Result parsed=AgentProtocol.parse(text);
         if(parsed.error!=null) {
@@ -289,6 +302,7 @@ public final class NativeAgent {
         else if(verb.equals("browser_observe"))params=new String[]{args.optString("port","9222")};
         else params=new String[0];
         Runnable execute=()->{
+            phase="EXECUTE_"+name.toUpperCase(Locale.ROOT);
             ui.log("Tool: "+name+" ("+(toolArgs.optString("path",toolArgs.optString("command","")))+")");
             termux.tool(verb,params,new TermuxBridge.Callback(){
                 @Override public void finished(JSONObject data) {
@@ -322,6 +336,7 @@ public final class NativeAgent {
           :name.equals("write_file")
           ? "Write "+args.optString("path","")+"\n"+args.optString("content","").substring(0,Math.min(2500,args.optString("content","").length()))
           : args.optString("command","");
+        phase="AWAITING_APPROVAL";
         ui.requestApproval("Approve "+name+"?",detail,approved->{
             if(stopped)return;
             if(approved)execute.run();else observed(name,"DENIED by user");
