@@ -196,8 +196,7 @@ public final class NativeAgent {
                 if(stopped || !active)return;
                 if(!approved){close("Blocked: proposed model-generated file was not approved.");return;}
                 String encoded=Base64.encodeToString(candidate.content.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
-                termux.tool("write",new String[]{candidate.path,encoded,
-                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+                termux.tool("write",new String[]{candidate.path,encoded,""},
                     new TermuxBridge.Callback(){
                         @Override public void finished(JSONObject result){
                             if(stopped || !active)return;
