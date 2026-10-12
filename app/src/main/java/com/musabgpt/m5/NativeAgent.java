@@ -125,7 +125,7 @@ public final class NativeAgent {
         else if(verb.equals("shell"))params=new String[]{args.optString("command","")};
         else params=new String[0];
         Runnable execute=()->{
-            ui.log("Tool: "+name+" ("+(args.optString("path",args.optString("command","")))+")");
+            ui.log("Tool: "+name+" ("+(toolArgs.optString("path",toolArgs.optString("command","")))+")");
             termux.tool(verb,params,new TermuxBridge.Callback(){
                 @Override public void finished(JSONObject data) {
                     if(stopped)return;
