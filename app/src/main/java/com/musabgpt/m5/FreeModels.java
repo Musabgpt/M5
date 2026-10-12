@@ -204,7 +204,7 @@ public final class FreeModels {
         if(header==null||header.isEmpty())return 0;
         try{
             long seconds=Long.parseLong(header.trim());
-            return Math.max(0,Math.min(3_600_000L,seconds*1000L));
+            return Math.max(0,Math.min(3_600_000L,seconds>=3600?3_600_000L:seconds*1000L));
         }catch(NumberFormatException ignored){}
         try{
             long delay=java.time.Duration.between(java.time.ZonedDateTime.now(),
