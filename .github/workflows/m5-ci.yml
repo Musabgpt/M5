@@ -1,0 +1,21 @@
+name: M5 — Core Security and Agent Tests
+on:
+  push:
+    branches: [main, feat/cursor-grade-workbench]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Syntax checks
+        run: npm run check
+      - name: Security, free provider and agent integration tests
+        run: npm test
