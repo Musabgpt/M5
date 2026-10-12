@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.InputType;
@@ -30,6 +31,8 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 100% native Android activity: no WebView, no local server, no localhost.
@@ -42,6 +45,8 @@ public final class M5Activity extends Activity {
     private LinearLayout root,body,toolbar;
     private TextView connection;
     private final ArrayList<String> feed=new ArrayList<>();
+    private final Map<String,Button> tabButtons=new LinkedHashMap<>();
+    private boolean showTrace=false;
     private TermuxBridge termux;
     private ProjectExporter exporter;
     private static final int REQUEST_EXPORT_ZIP=940;
@@ -100,14 +105,25 @@ public final class M5Activity extends Activity {
         TextView t=new TextView(this);t.setText(value);t.setTextSize(TypedValue.COMPLEX_UNIT_SP,size);
         t.setTextColor(color);t.setPadding(dp(8),dp(7),dp(8),dp(7));return t;
     }
+    private GradientDrawable surface(int fill,int stroke,int radius){
+        GradientDrawable draw=new GradientDrawable();
+        draw.setColor(fill);
+        draw.setCornerRadius(dp(radius));
+        draw.setStroke(dp(1),stroke);
+        return draw;
+    }
     private Button button(String text,Runnable action){
-        Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextColor(Color.WHITE);
-        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(SURFACE));
+        Button b=new Button(this);
+        b.setText(text);b.setAllCaps(false);b.setTextColor(Color.WHITE);
+        b.setTextSize(13);
+        b.setPadding(dp(8),dp(4),dp(8),dp(4));
+        b.setBackground(surface(SURFACE,Color.rgb(60,67,82),12));
         b.setOnClickListener(v->action.run());return b;
     }
     private EditText input(String hint,int lines){
         EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(MUTED);
-        e.setBackgroundTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        e.setBackground(surface(Color.rgb(26,30,40),Color.rgb(77,89,111),12));
+        e.setPadding(dp(14),dp(12),dp(14),dp(12));
         e.setTextSize(14);e.setMinLines(lines);e.setGravity(Gravity.TOP|Gravity.START);
         return e;
     }
@@ -145,7 +161,10 @@ public final class M5Activity extends Activity {
         LinearLayout tabs=horizontal();
         for(String name:new String[]{"Files","Agent","Phone","Terminal","Providers"}) {
             Button b=button(name,()->showPanel(name.toLowerCase()));
-            tabs.addView(b,new LinearLayout.LayoutParams(dp(98),dp(48)));
+            tabButtons.put(name.toLowerCase(),b);
+            LinearLayout.LayoutParams tabLayout=new LinearLayout.LayoutParams(dp(96),dp(44));
+            tabLayout.setMargins(dp(3),dp(3),dp(3),dp(3));
+            tabs.addView(b,tabLayout);
         }
         Button connect=button("↻ Termux",this::connectTermux);
         tabs.addView(connect,new LinearLayout.LayoutParams(dp(124),dp(48)));
@@ -180,7 +199,15 @@ public final class M5Activity extends Activity {
         if(req==140 && results.length>0 && results[0]==PackageManager.PERMISSION_GRANTED)connectTermux();
     }
     private void showPanel(String name){
-        activePanel=name;body.removeAllViews();
+        activePanel=name;
+        for(Map.Entry<String,Button> entry:tabButtons.entrySet()){
+            boolean selected=entry.getKey().equals(name);
+            entry.getValue().setBackground(surface(
+                selected?Color.rgb(38,65,103):SURFACE,
+                selected?ACCENT:Color.rgb(60,67,82),12));
+            entry.getValue().setTextColor(selected?Color.rgb(189,219,255):Color.WHITE);
+        }
+        body.removeAllViews();
         switch(name){
             case "files":showFiles();break;
             case "agent":showAgent();break;
@@ -339,9 +366,15 @@ public final class M5Activity extends Activity {
     }
     private void showAgent(){
         caption("AI CODING AGENT");
-        info("AI chat uses direct HTTPS. For coding tools tap Connect Termux above. No local server.");
+        LinearLayout options=horizontal();
+        TextView details=label("Native tools  ·  Consent  ·  Free AI",12,MUTED);
+        options.addView(details,new LinearLayout.LayoutParams(0,dp(40),1));
+        options.addView(button(showTrace?"Hide trace":"Show trace",()->{
+            showTrace=!showTrace;showPanel("agent");
+        }));
+        body.addView(options);
         chatScroll=new ScrollView(this);chatLog=vertical();
-        for(String text:feed)chatLog.addView(messageView(text));
+        for(String text:feed)if(showTrace||!isTrace(text))chatLog.addView(messageView(text));
         chatScroll.addView(chatLog);
         body.addView(chatScroll,new LinearLayout.LayoutParams(-1,0,1));
         providerPicker=new Spinner(this);providerPicker.setAdapter(spinnerAdapter(FreeModels.FAMILIES));body.addView(providerPicker);
@@ -370,15 +403,28 @@ public final class M5Activity extends Activity {
         ArrayAdapter<String> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,values);
         return a;
     }
+    private boolean isTrace(String content){
+        return content.startsWith("Reasoning step")||content.startsWith("Provider:")||
+            content.startsWith("Tool:")||content.startsWith("Result of ")||
+            content.startsWith("M5 native ")||content.startsWith("Opening ");
+    }
     private TextView messageView(String content){
-        TextView text=label(content,14,Color.WHITE);text.setBackgroundColor(SURFACE);
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(7);
-        text.setLayoutParams(lp);return text;
+        boolean user=content.startsWith("You:");
+        boolean blocked=content.startsWith("Blocked:")||content.startsWith("Tool failed:")||content.startsWith("Free model request failed:");
+        TextView text=label(content,14,user?Color.rgb(231,241,255):Color.WHITE);
+        text.setPadding(dp(15),dp(12),dp(15),dp(12));
+        text.setBackground(surface(user?Color.rgb(29,60,104):
+            blocked?Color.rgb(89,48,42):Color.rgb(37,43,56),
+            blocked?Color.rgb(155,83,70):Color.rgb(59,69,89),14));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(user?dp(25):0,dp(2),user?0:dp(12),dp(6));
+        text.setLayoutParams(lp);
+        return text;
     }
     private void addFeed(String text){
         feed.add(text);
         while(feed.size()>90)feed.remove(0);
-        if("agent".equals(activePanel) && chatLog!=null){
+        if("agent".equals(activePanel) && chatLog!=null && (showTrace||!isTrace(text))){
             chatLog.addView(messageView(text));
             chatScroll.post(()->chatScroll.fullScroll(View.FOCUS_DOWN));
         }
