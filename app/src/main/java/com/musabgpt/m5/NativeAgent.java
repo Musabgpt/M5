@@ -36,7 +36,7 @@ public final class NativeAgent {
     private static final String SYSTEM =
       "You are M5, an Android coding agent with REAL workspace tools. "
     + "Project workspace is controlled by Termux with explicit user consent. "
-    + "Available tools: list_files {}, read_file {path}, search_code {query}, "
+    + "Available tools: exec_command {command,workdir,yield_time_ms}, read_output {id}, terminate_process {id}, list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
     + "check_file {path,expectedHash}, run_file {path,expectedHash}, audit_project {path}, apply_patch {path,diff,expectedHash}, browser_observe {port}, history_list {path}, history_compare {path,id}, history_restore {path,id,expectedHash}, git_project_status {path}, git_project_diff {path}, git_project_init {path}, "
     + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
@@ -268,10 +268,10 @@ public final class NativeAgent {
             runPhone(name,toolArgs);
             return;
         }
-        if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|audit_project|history_list|history_compare|history_restore|git_project_status|git_project_diff|git_project_init|apply_patch|browser_observe|git_status|git_diff")){
+        if(!name.matches("exec_command|read_output|terminate_process|list_files|read_file|search_code|write_file|run_command|check_file|run_file|audit_project|history_list|history_compare|history_restore|git_project_status|git_project_diff|git_project_init|apply_patch|browser_observe|git_status|git_diff")){
             observed(name,"REJECTED: unregistered tool");return;
         }
-        final boolean modifying=name.equals("write_file")||name.equals("run_command")||name.equals("run_file")||name.equals("history_restore")||name.equals("git_project_init")||name.equals("apply_patch");
+        final boolean modifying=name.equals("exec_command")||name.equals("terminate_process")||name.equals("write_file")||name.equals("run_command")||name.equals("run_file")||name.equals("history_restore")||name.equals("git_project_init")||name.equals("apply_patch");
         final boolean sensitiveRead=name.equals("browser_observe");
         if(!termux.isConnected()) {
             ui.log("Termux is not connected. No project tool was executed.");
@@ -284,6 +284,18 @@ public final class NativeAgent {
             return;
         }
         if("plan".equals(mode)&&modifying){observed(name,"REJECTED: Plan mode does not allow changes or command execution");return;}
+        if(name.equals("exec_command")||name.equals("read_output")||name.equals("terminate_process")){
+            if("plan".equals(mode)&&!name.equals("read_output")){observed(name,"DENIED in plan mode");return;}
+            String op=name.equals("exec_command")?"start":name.equals("read_output")?"read":"terminate";
+            String[] p=name.equals("exec_command")?new String[]{Base64.encodeToString(args.optString("command","").getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP),args.optString("workdir",""),String.valueOf(args.optInt("yield_time_ms",1000))}:new String[]{args.optString("id","")};
+            Runnable execute=()->termux.session(op,p,new TermuxBridge.Callback(){
+                @Override public void finished(JSONObject data){if(!stopped)observed(name,data.toString());}
+                @Override public void failed(String error){if(!stopped)observed(name,"ERROR: "+error);}
+            });
+            if(name.equals("read_output"))execute.run();
+            else ui.requestApproval("Approve Termux "+name+"?",args.toString(),approved->{if(approved)execute.run();else observed(name,"DENIED by user");});
+            return;
+        }
         String verb=name.equals("list_files")?"list":name.equals("read_file")?"read":name.equals("search_code")?"search":
                 name.equals("apply_patch")?"patch_apply":
                 name.equals("write_file")?"write":name.equals("run_command")?"shell":name;

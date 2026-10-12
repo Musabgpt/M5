@@ -65,11 +65,20 @@ public final class TermuxBridge {
             callback.failed("Bundled native tools unavailable: "+e.getMessage());
             return;
         }
+        String sessionCode;
+        try(InputStream input=activity.getAssets().open("termux-sessions.mjs");
+            ByteArrayOutputStream buf=new ByteArrayOutputStream()){
+            byte[] block=new byte[4096];int n;
+            while((n=input.read(block))!=-1){buf.write(block,0,n);if(buf.size()>80000)throw new IllegalStateException("Session engine too large");}
+            sessionCode=Base64.encodeToString(buf.toByteArray(),Base64.NO_WRAP);
+        }catch(Exception e){callback.failed("Session engine missing: "+e.getMessage());return;}
         String script="set -eu; "
             + "command -v node >/dev/null 2>&1 || pkg install -y nodejs-lts 1>&2; "
             + "mkdir -p \"$HOME/m5-native/scripts\" \"$HOME/m5-workspace\"; "
             + "printf '%s' '"+encoded+"' | base64 -d > \"$HOME/m5-native/scripts/native-bridge.mjs.m5new\"; "
             + "mv \"$HOME/m5-native/scripts/native-bridge.mjs.m5new\" \"$HOME/m5-native/scripts/native-bridge.mjs\"; "
+            + "printf '%s' '"+sessionCode+"' | base64 -d > \"$HOME/m5-native/scripts/termux-sessions.mjs.m5new\"; "
+            + "mv \"$HOME/m5-native/scripts/termux-sessions.mjs.m5new\" \"$HOME/m5-native/scripts/termux-sessions.mjs\"; "
             + "node \"$HOME/m5-native/scripts/native-bridge.mjs\" ping";
         sessionReady=false;
         execute(PREFIX + "bash", new String[]{"-lc",script}, new Callback(){
@@ -83,6 +92,17 @@ public final class TermuxBridge {
                 callback.failed(reason);
             }
         },120000);
+    }
+
+    /** Launch a durable Termux command session. Requires approval at the caller. */
+    public void session(String operation,String[] args,Callback callback){
+        if(!isConnected()){callback.failed("Connect Termux first");return;}
+        if(!operation.matches("start|read|terminate")){callback.failed("Unsupported session operation");return;}
+        String[] params=new String[args.length+2];
+        params[0]=HOME+"/m5-native/scripts/termux-sessions.mjs";
+        params[1]=operation;
+        System.arraycopy(args,0,params,2,args.length);
+        execute(PREFIX+"node",params,callback,75000);
     }
 
     public void tool(String action, String[] arguments, Callback callback) {
