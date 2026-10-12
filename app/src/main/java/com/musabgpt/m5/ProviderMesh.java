@@ -38,10 +38,14 @@ public final class ProviderMesh {
         n.successes++;n.consecutiveFailures=0;n.blockedUntilMs=0;
     }
     public synchronized void failure(int index,int status,long nowMs){
+        failure(index,status,nowMs,0L);
+    }
+    public synchronized void failure(int index,int status,long nowMs,long retryAfterMs){
         Node n=nodes[index];n.failures++;n.consecutiveFailures++;
         long wait;
-        if(status==429)wait=600_000L;
-        else if(status==503||status==502||status==504)wait=180_000L;
+        if(status==429)wait=Math.max(30_000L,Math.min(3_600_000L,retryAfterMs));
+        else if(status==503||status==502||status==504)
+            wait=Math.max(30_000L,Math.min(300_000L,retryAfterMs));
         else if(status==401||status==403||status==404)wait=3_600_000L;
         else wait=Math.min(300_000L,20_000L*(1L<<Math.min(n.consecutiveFailures-1,4)));
         n.blockedUntilMs=Math.max(n.blockedUntilMs,nowMs+wait);
