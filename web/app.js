@@ -19,7 +19,7 @@ const element = (tag, attrs = {}, text = '') => {
 function panel(name) {
   state.panel = name;
   document.querySelectorAll('.rail button').forEach(button => button.classList.toggle('active', button.dataset.panel === name));
-  $('sidebar-title').textContent = { files:'EXPLORER',agent:'AGENT',search:'SEARCH',git:'SOURCE CONTROL',terminal:'TERMINAL',settings:'PROVIDERS' }[name] || 'EXPLORER';
+  $('sidebar-title').textContent = { files:'EXPLORER',agent:'AGENT',ide:'VS CODE',search:'SEARCH',git:'SOURCE CONTROL',terminal:'TERMINAL',settings:'PROVIDERS' }[name] || 'EXPLORER';
   $('welcome').hidden = name !== 'files' || !!state.file;
   $('editor-view').hidden = name !== 'files' || !state.file;
   $('agent-view').hidden = name !== 'agent';
@@ -123,9 +123,33 @@ async function decision(approved) {
 function outputView(parent, text) { parent.append(element('pre', { className:'output' }, text)); }
 async function secondary(name) {
   const view = $('secondary-view'); view.replaceChildren();
-  const title = element('h2', {}, { search:'Workspace Search', git:'Source Control', terminal:'Termux Shell', settings:'Model Gateways' }[name] || name);
+  const title = element('h2', {}, { search:'Workspace Search', git:'Source Control', terminal:'Termux Shell', settings:'Model Gateways', ide:'VS Code Engine' }[name] || name);
   view.append(title);
-  if (name === 'search') {
+  if (name === 'ide') {
+    view.append(element('p', {}, 'Optional free, open-source code-server mode: authentic VS Code browser IDE inside this Android app. Install in Termux: pkg install tur-repo && pkg install code-server. Some desktop extensions are unsupported on Android.'));
+    const status = await api('/api/ide/status');
+    view.append(element('p', { className:'muted' }, 'Installed: ' + status.installed + ' · Running: ' + status.running));
+    const start = element('button', {}, 'Start secure VS Code engine');
+    const result = element('div');
+    view.append(start, result);
+    start.disabled = !status.installed;
+    start.onclick = async () => {
+      start.disabled = true;
+      try {
+        const ready = await post('/api/ide/start');
+        result.replaceChildren();
+        result.append(element('p', {}, 'Local VS Code password (never sent to an LLM):'));
+        const password = element('input', { readonly:'readonly', value:ready.password, style:'width:100%' });
+        result.append(password);
+        const copy = element('button', {}, 'Copy password');
+        copy.onclick = async () => { password.select(); try { await navigator.clipboard.writeText(ready.password); } catch { document.execCommand('copy'); } };
+        const open = element('button', {}, 'Open VS Code in this window');
+        open.onclick = () => { window.location.assign(ready.target); };
+        const tools = element('div', { className:'secondary-actions' }); tools.append(copy, open); result.append(tools);
+      } catch (e) { result.textContent = e.message; }
+      finally { start.disabled = false; }
+    };
+  } else if (name === 'search') {
     const input = element('input', { placeholder: 'Search text in project files' });
     const button = element('button', {}, 'Search');
     const result = element('div');
