@@ -48,7 +48,7 @@ public final class NativeAgent {
         messages.put(message("system",SYSTEM));
         messages.put(message("user",goal+
           ("\u0070lan".equals(mode)?"\nPLAN MODE: strictly read-only, do not run commands or edit files.":
-          "\nAGENT MODE: inspect, edit with approval, validate with a real test."));
+          "\nAGENT MODE: inspect, edit with approval, validate with a real test.")));
         ui.log("M5 native "+mode+" started. Tools run only through Termux.");
         advance();
     }
