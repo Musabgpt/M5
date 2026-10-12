@@ -63,7 +63,7 @@ public final class AgentProtocol {
                     }
                 }
             }
-            if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff|phone_apps|phone_open|phone_open_url|phone_dial|phone_sms_draft|phone_observe|phone_click|phone_type|phone_scroll|phone_back|phone_home|finish"))
+            if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|git_status|git_diff|phone_apps|phone_open|phone_open_url|phone_dial|phone_sms_draft|phone_observe|phone_click|phone_type|phone_scroll|phone_back|phone_home|finish"))
                 return new Result(null,"Unsupported model tool: "+name);
             JSONObject normalized=new JSONObject();
             normalized.put("name",name);
