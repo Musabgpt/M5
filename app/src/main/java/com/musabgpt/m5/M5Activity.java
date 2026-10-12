@@ -338,6 +338,7 @@ public final class M5Activity extends Activity {
         if(selectedFile.isEmpty())actions.addView(button("Search",()->requireTermux(this::searchWorkspace)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("Drafts",this::showSavedDrafts),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
+        if(!selectedFile.isEmpty())actions.addView(button("History",()->requireTermux(this::showFileHistory)),new LinearLayout.LayoutParams(0,dp(48),1));
         // Use horizontally scrollable full-size actions, not cramped 0-width weighted buttons.
         for(int i=0;i<actions.getChildCount();i++){
             View item=actions.getChildAt(i);
@@ -526,6 +527,104 @@ public final class M5Activity extends Activity {
         }
         showPanel("files");
     }
+    private void showFileHistory(){
+        if(editor==null||selectedFile.isEmpty())return;
+        final String path=editorFile;
+        if(!editor.getText().toString().equals(lastSavedContent)){
+            showError("Save your edits first","Version History displays saved revisions. Save or preserve your current draft before restoring another revision.");
+            return;
+        }
+        termux.tool("history_list",new String[]{path},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject payload){
+                JSONArray versions=payload.optJSONArray("entries");
+                if(versions==null||versions.length()==0){
+                    showError("History · "+path,"No earlier saved versions yet. M5 automatically keeps the previous revision whenever you save a changed file.");
+                    return;
+                }
+                final String expectedHash=payload.optString("currentHash","");
+                ArrayList<String> labels=new ArrayList<>();
+                ArrayList<String> ids=new ArrayList<>();
+                for(int i=0;i<versions.length();i++){
+                    JSONObject version=versions.optJSONObject(i);
+                    if(version==null)continue;
+                    String id=version.optString("id","");
+                    if(id.isEmpty())continue;
+                    ids.add(id);
+                    String time=java.text.DateFormat.getDateTimeInstance(
+                        java.text.DateFormat.SHORT,java.text.DateFormat.SHORT)
+                        .format(new java.util.Date(version.optLong("createdAt",0)));
+                    labels.add(time+" · "+version.optInt("bytes")+" bytes\n"+
+                        version.optString("hash","").substring(0,Math.min(12,version.optString("hash","").length())));
+                }
+                new AlertDialog.Builder(M5Activity.this)
+                    .setTitle("Saved history · "+path)
+                    .setItems(labels.toArray(new String[0]),(dialog,index)->
+                        compareHistory(path,ids.get(index),expectedHash))
+                    .setNegativeButton("Close",null).show();
+            }
+            @Override public void failed(String error){showError("Cannot read file history",error);}
+        });
+    }
+    private void compareHistory(String path,String checkpoint,String hashAtListing){
+        termux.tool("history_compare",new String[]{path,checkpoint},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject result){
+                JSONArray changes=result.optJSONArray("changes");
+                StringBuilder preview=new StringBuilder();
+                preview.append("Previous SHA: ").append(result.optString("oldHash",""))
+                    .append("\nCurrent SHA: ").append(result.optString("currentHash",""))
+                    .append("\nChanged lines:\n");
+                if(changes==null||changes.length()==0)preview.append("(No changed lines in preview)\n");
+                else for(int i=0;i<changes.length();i++){
+                    JSONObject difference=changes.optJSONObject(i);
+                    if(difference==null)continue;
+                    preview.append("\nLine ").append(difference.optInt("line")).append("\n− ")
+                        .append(difference.optString("before","")).append("\n+ ")
+                        .append(difference.optString("after","")).append('\n');
+                }
+                if(result.optBoolean("limited"))preview.append("\n[Preview limited; inspect source carefully]");
+                if(preview.length()>4700)preview.setLength(4700);
+                String currentHash=result.optString("currentHash","");
+                String oldHash=result.optString("oldHash","");
+                new AlertDialog.Builder(M5Activity.this).setTitle("Review checkpoint")
+                    .setMessage(preview.toString())
+                    .setNegativeButton("Cancel",null)
+                    .setPositiveButton("Restore revision",(dialog,which)->{
+                        if(!path.equals(editorFile) || editor==null ||
+                           !lastSavedContent.equals(editor.getText().toString()) ||
+                           !originalHash.equals(currentHash)||!hashAtListing.equals(currentHash)){
+                            showError("Restore cancelled","The file or editor state changed since you requested History. Reopen it first.");
+                            return;
+                        }
+                        new AlertDialog.Builder(M5Activity.this)
+                            .setTitle("Confirm restore of "+path+"?")
+                            .setMessage("Replace the current saved file with the reviewed earlier revision ("+
+                                oldHash.substring(0,Math.min(12,oldHash.length()))+
+                                ")? M5 will checkpoint the current file first so this action is reversible.")
+                            .setNegativeButton("Keep current file",null)
+                            .setPositiveButton("Restore now",(d,w)->
+                                restoreFileHistory(path,checkpoint,currentHash))
+                            .show();
+                    }).show();
+            }
+            @Override public void failed(String error){showError("Cannot compare versions",error);}
+        });
+    }
+    private void restoreFileHistory(String path,String checkpoint,String expectedHash){
+        termux.tool("history_restore",new String[]{path,checkpoint,expectedHash},new TermuxBridge.Callback(){
+            @Override public void finished(JSONObject receipt){
+                if(!path.equals(editorFile)||!expectedHash.equals(originalHash)){
+                    showError("File restored","The saved file was restored but you switched editors. Reopen "+path+" to inspect the result.");
+                    return;
+                }
+                unsavedDrafts.remove(path);
+                try{draftVault.remove(path);}catch(Exception error){toast("Old draft cleanup failed");}
+                toast("Saved revision restored. A checkpoint of the previous file was kept.");
+                openFile(path);
+            }
+            @Override public void failed(String error){showError("Revision not restored",error);}
+        });
+    }
+
     private void newFile(){
         EditText name=input("Relative filename: e.g. main.py",1);
         new AlertDialog.Builder(this).setTitle("New source file")
