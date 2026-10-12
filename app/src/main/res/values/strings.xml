@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="m5_accessibility_description">Optional on-demand phone automation: read visible controls, tap, type, scroll and navigate after your approval. No background screen logging. Disable in Android Accessibility Settings at any time.</string>
+</resources>
