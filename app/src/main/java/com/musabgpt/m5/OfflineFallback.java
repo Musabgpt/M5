@@ -17,7 +17,8 @@ public final class OfflineFallback {
         if(request==null||request.length()>700)return null;
         String s=request.toLowerCase(Locale.ROOT).replaceAll("\\s+"," ");
         boolean create=s.matches("(?s).*(أنشئ|انشئ|اصنع|ابن|اكتب|سوّي|سوي|إنشاء|عمل|create|build|generate|make|write).*");
-        if(!create)return null;
+        if(!create || s.contains("لا تكتب") || s.contains("لا تنشئ") ||
+            s.contains("do not create") || s.contains("don\'t create"))return null;
         boolean calculator=s.matches("(?s).*(حاسبة|آلة حاسبة|اله حاسبه|calculator).*");
         boolean web=s.matches("(?s).*(html|javascript|ويب|web|متصفح|browser).*");
         if(calculator&&web)
