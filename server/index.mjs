@@ -68,7 +68,7 @@ function ensureString(value, limit = 2000) {
   return value;
 }
 async function staticFile(res, name, root = webRoot) {
-  if (!['/index.html', '/app.js', '/style.css'].includes(name)) return json(res, 404, { error: 'Not found' });
+  if (!['/index.html', '/app.js', '/style.css', '/editor.bundle.js'].includes(name)) return json(res, 404, { error: 'Not found' });
   const data = await fsp.readFile(path.join(root, name.slice(1)));
   res.writeHead(200, { 'Content-Type': MIME[path.extname(name)] });
   res.end(data);
@@ -87,7 +87,7 @@ export const server = http.createServer(async (req, res) => {
     if (!authorized(req)) return json(res, 401, { error: 'M5 is locked. Use the local URL printed by Termux to pair the interface.' });
     if (req.method === 'POST' && !validPost(req)) return json(res, 403, { error: 'Cross-origin request rejected' });
     if (url.pathname === '/' && req.method === 'GET') return staticFile(res, '/index.html');
-    if (url.pathname === '/app.js' || url.pathname === '/style.css') return staticFile(res, url.pathname);
+    if (url.pathname === '/app.js' || url.pathname === '/style.css' || url.pathname === '/editor.bundle.js') return staticFile(res, url.pathname);
     if (url.pathname === '/api/status' && req.method === 'GET') {
       return json(res, 200, { name: 'M5', workspace, platform: process.platform, runtime: 'Termux-compatible Node.js', providers: ROUTES.map(x => ({ name: x.name, family: x.family, model: x.model, local: x.base.startsWith('http://') })) });
     }
