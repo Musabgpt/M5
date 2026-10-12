@@ -95,6 +95,35 @@ async function write(relative,b64,expected) {
   }finally{await fs.rm(temp,{force:true});}
   return {path:relative,hash:sha(bytes),bytes:bytes.length};
 }
+
+/** Offline user-approved project creation with no API calls or dependencies. */
+const PROJECT_PRESETS={"web-calculator":{"index.html":"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>M5 Calculator</title><link rel=\"stylesheet\" href=\"style.css\"></head><body>\n<main class=\"card\"><h1>Calculator</h1><p>Offline. No paid APIs or frameworks.</p>\n<label>First number <input id=\"a\" type=\"number\" step=\"any\" placeholder=\"0\"></label>\n<label>Operation <select id=\"operation\"><option value=\"+\">+</option><option value=\"-\">−</option><option value=\"*\">×</option><option value=\"/\">÷</option></select></label>\n<label>Second number <input id=\"b\" type=\"number\" step=\"any\" placeholder=\"0\"></label>\n<button id=\"calculate\" type=\"button\">Calculate</button><output id=\"answer\" aria-live=\"polite\">Enter numbers to begin</output>\n</main><script src=\"app.js\" defer></script></body></html>\n","style.css":"*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px}.card{background:#1f2937;border:1px solid #374151;border-radius:20px;max-width:400px;width:100%;padding:28px;box-shadow:0 20px 50px #0004}h1{margin:0 0 4px}p{color:#9ca3af}label{display:block;margin:16px 0;font-weight:600}input,select{display:block;width:100%;padding:14px;margin-top:6px;background:#111827;color:white;border:1px solid #6b7280;border-radius:10px;font-size:18px}button{background:#60a5fa;border:0;border-radius:10px;font-size:17px;font-weight:700;padding:14px;width:100%;margin-top:8px;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #93c5fd}output{display:block;padding:18px;margin-top:12px;font-size:20px;font-weight:700;min-height:60px}\n","app.js":"\"use strict\";\nconst $=id=>document.getElementById(id);\nfunction calculate(){\n const a=$(\"a\").value.trim(),b=$(\"b\").value.trim(),op=$(\"operation\").value;\n if(a===\"\"||b===\"\"){$(\"answer\").textContent=\"Enter both numbers\";return;}\n const x=Number(a),y=Number(b);\n if(!Number.isFinite(x)||!Number.isFinite(y)){$(\"answer\").textContent=\"Invalid numbers\";return;}\n if(op===\"/\"&&y===0){$(\"answer\").textContent=\"Cannot divide by zero\";return;}\n const result=op===\"+\"?x+y:op===\"-\"?x-y:op===\"*\"?x*y:x/y;\n $(\"answer\").textContent=Number.isFinite(result)?String(Number(result.toPrecision(12))):\"Result is out of range\";\n}\n$(\"calculate\").addEventListener(\"click\",calculate);\n","README.md":"# Calculator\n\nOpen index.html. Works entirely offline.\n"},"python":{"main.py":"#!/usr/bin/env python3\n\ndef greet(name: str) -> str:\n    return f'Hello, {name}!'\n\nif __name__ == '__main__':\n    print(greet('M5'))\n","README.md":"# Python Starter\n\nRun python main.py in Termux after installing Python.\n"},"node":{"main.mjs":"const name=process.argv[2]||'M5';\nconsole.log('Hello, '+name+'!');\n","package.json":"{\"name\":\"m5-starter\",\"version\":\"1.0.0\",\"type\":\"module\",\"private\":true,\"scripts\":{\"start\":\"node main.mjs\",\"test\":\"node --check main.mjs\"}}\n","README.md":"# Node Starter\n\nRun npm start or npm test.\n"}};
+async function scaffoldProject(name,preset){
+  if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_-]{1,35}$/.test(name))
+    fail('Use a project name of 2–36 letters, numbers, hyphens or underscores');
+  const files=PROJECT_PRESETS[preset];
+  if(!files)fail('Unsupported project template');
+  const folder=await target(name,true);
+  try{await fs.mkdir(folder,{mode:0o700});}
+  catch(e){if(e.code==='EEXIST')fail('Project already exists; choose another name');throw e;}
+  try {
+    for(const [file,body] of Object.entries(files))
+      await fs.writeFile(path.join(folder,file),body,{flag:'wx',mode:0o600});
+    let verified='created';
+    if(preset==='web-calculator'||preset==='node'){
+      const check=path.join(folder,preset==='node'?'main.mjs':'app.js');
+      const code=await new Promise((resolve,reject)=>{
+        const p=spawn(process.execPath,['--check',check],{stdio:'ignore'});
+        p.once('error',reject);
+        p.once('close',resolve);
+      });
+      if(code!==0)fail('Generated source did not pass JavaScript syntax check');
+      verified='node --check passed';
+    }
+    return {project:name,preset,files:Object.keys(files).map(file=>name+'/'+file),verification:verified};
+  }catch(e){await fs.rm(folder,{recursive:true,force:true});throw e;}
+}
+
 async function command(value,timeout=30000) {
   if(typeof value!=='string'||value.length>1600||!value.trim())fail('Invalid shell command');
   return await new Promise((resolve,reject)=>{
@@ -119,6 +148,7 @@ async function main(){
   let data;
   switch(verb){
     case 'ping':data={ready:true,runtime:'native-termux',root:ROOT};break;
+    case 'scaffold':data=await scaffoldProject(args[0],args[1]);break;
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
     case 'write':data=await write(args[0],args[1],args[2]);break;
