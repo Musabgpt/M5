@@ -7,6 +7,18 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.net.URL;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
+import java.net.ConnectException;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.io.InterruptedIOException;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.ArrayDeque;
 import java.io.OutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -21,10 +33,15 @@ public final class FreeModels {
     private static final ExecutorService NETWORK=Executors.newSingleThreadExecutor();
     private final SharedPreferences prefs;
     private final SecureKeys keys;
-    private final ProviderMesh mesh=new ProviderMesh(4);
+    // 0–3 anonymous routes; 5–11 optional, explicitly configured families.
+    private final ProviderMesh mesh=new ProviderMesh(12);
+    private final MeshFailover orchestrator=new MeshFailover(mesh);
+    private final ArrayDeque<String> recentEvents=new ArrayDeque<>();
+    private volatile String lastActiveRoute="none";
     public interface Callback {
         void success(String text,String route);
         void error(String message);
+        default void status(String event){}
     }
     private static final String[][] PUBLIC_ROUTES = {
         {"Kilo Free","https://api.kilo.ai/api/gateway/chat/completions","kilo-auto/free"},
@@ -34,17 +51,20 @@ public final class FreeModels {
     };
     public static final String[] FAMILIES = {
         "FreeLLMPool","GPT4Free","Free LLM Gateway","Free LLM API",
-        "Groq Free (API key)","OpenRouter Free (API key)","Google AI Studio Free (API key)"
+        "Groq Free (API key)","OpenRouter Free (API key)","Google AI Studio Free (API key)",
+        "Hugging Face limited free credits (API key)"
     };
     private static final String[] OFFICIAL_URLS = {
         "","","","",
         "https://api.groq.com/openai/v1/chat/completions",
         "https://openrouter.ai/api/v1/chat/completions",
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "https://router.huggingface.co/v1/chat/completions"
     };
     private static final String[] OFFICIAL_MODELS = {
         "","","","",
-        "openai/gpt-oss-120b","openrouter/free","gemini-2.5-flash"
+        "openai/gpt-oss-120b","openrouter/free","gemini-2.5-flash",
+        "openai/gpt-oss-120b:fastest"
     };
     public FreeModels(Context context) {
         prefs=context.getSharedPreferences("m5-provider",Context.MODE_PRIVATE);
@@ -74,88 +94,164 @@ public final class FreeModels {
             throw new IllegalArgumentException("Model identifier required");
         prefs.edit().putString("url_"+family,endpoint).putString("model_"+family,model).apply();
     }
+    private static final class Endpoint {
+        final String label,url,model,key;
+        Endpoint(String label,String url,String model,String key){
+            this.label=label;this.url=url;this.model=model;this.key=key;
+        }
+    }
+    private synchronized void record(String event){
+        if(event==null)return;
+        recentEvents.addLast(event.substring(0,Math.min(180,event.length())));
+        while(recentEvents.size()>18)recentEvents.removeFirst();
+    }
     public void complete(JSONArray messages,int family,Callback callback) {
+        // Context is serialized ONCE. No failover transition can alter this payload.
+        final String payload;
+        try{
+            JSONObject requestBody=new JSONObject()
+                .put("model","placeholder") // overwritten per provider, context never changes
+                .put("messages",messages)
+                .put("stream",false)
+                .put("temperature",0.1);
+            payload=requestBody.toString();
+        }catch(Exception error){callback.error("Could not prepare request");return;}
         NETWORK.execute(()->{
-            StringBuilder errors=new StringBuilder();
+            final long started=SystemClock.elapsedRealtime();
+            List<MeshFailover.Route> enabled=new ArrayList<>();
+            Map<Integer,Endpoint> endpoints=new LinkedHashMap<>();
+            if(family>0&&family<FAMILIES.length&&!getEndpoint(family).isEmpty()){
+                try {
+                    String token=keys.get(family);
+                    if(family<4||!token.isEmpty()){
+                        int id=4+family;
+                        enabled.add(new MeshFailover.Route(id,FAMILIES[family]));
+                        endpoints.put(id,new Endpoint(FAMILIES[family],getEndpoint(family),getModel(family),token));
+                    }else record("[Mesh] Selected free route requires a user-supplied free API key");
+                }catch(Exception ignored){record("[Mesh] Encrypted key unavailable; using public alternatives");}
+            }
+            List<Integer> order=mesh.order(started);
+            for(int id:order)if(id>=0&&id<PUBLIC_ROUTES.length){
+                String[] route=PUBLIC_ROUTES[id];
+                enabled.add(new MeshFailover.Route(id,route[0]));
+                endpoints.put(id,new Endpoint(route[0],route[1],route[2],""));
+            }
+            final MeshFailover.Events events=event->{
+                record(event);
+                try{callback.status(event);}catch(RuntimeException ignored){}
+            };
             try{
-                if(family>0&&family<FAMILIES.length&&!getEndpoint(family).isEmpty()){
-                    try {
-                        String secret=keys.get(family);
-                        if(family>=4&&secret.isEmpty())throw new Exception("Add a free-tier API key in Providers");
-                        String output=request(getEndpoint(family),getModel(family),messages,secret);
-                        callback.success(output,FAMILIES[family]);return;
-                    }catch(Exception e){errors.append(FAMILIES[family]).append(": ").append(e.getMessage()).append("; ");}
-                }
-                int attempted=0;
-                long now=SystemClock.elapsedRealtime();
-                for(int i:mesh.order(now)){
-                    attempted++;
-                    String[] route=PUBLIC_ROUTES[i];
-                    long started=SystemClock.elapsedRealtime();
-                    try{
-                        String text=request(route[1],route[2],messages,"");
-                        mesh.success(i,SystemClock.elapsedRealtime()-started);
-                        callback.success(text,route[0]);return;
-                    }catch(ProviderError e){
-                        mesh.failure(i,e.code,SystemClock.elapsedRealtime());
-                        errors.append(route[0]).append(": HTTP ").append(e.code).append("; ");
-                    }catch(Exception e){
-                        mesh.failure(i,0,SystemClock.elapsedRealtime());
-                        errors.append(route[0]).append(": ").append(e.getClass().getSimpleName()).append("; ");
-                    }
-                }
-                if(attempted==0)errors.append("All public free routes are cooling down after rate limits or network errors.");
-                callback.error("Free providers unavailable. "+errors.substring(0,Math.min(420,errors.length())));
-            }catch(Exception e){callback.error("Free provider failure: "+e.getMessage());}
+                MeshFailover.Result result=orchestrator.execute(enabled,
+                    (id,remaining)->{
+                        Endpoint endpoint=endpoints.get(id);
+                        if(endpoint==null)throw new MeshFailover.Failure(0,0,false);
+                        try{return request(endpoint.url,endpoint.model,payload,endpoint.key,remaining);}
+                        catch(ProviderError problem){
+                            throw new MeshFailover.Failure(problem.code,problem.retryAfterMs,
+                                problem.code==502||problem.code==503||problem.code==504);
+                        }catch(SocketTimeoutException|UnknownHostException|SocketException exception){
+                            throw new MeshFailover.Failure(0,0,true);
+                        }catch(InterruptedIOException exception){
+                            throw new MeshFailover.Failure(0,0,true);
+                        }catch(Exception exception){throw new MeshFailover.Failure(0,0,false);}
+                    },SystemClock::elapsedRealtime,Thread::sleep,events);
+                lastActiveRoute=result.route;
+                callback.success(result.text,result.route);
+            }catch(MeshFailover.Exhausted unavailable){
+                events.update("[Mesh] All eligible free routes exhausted or cooling down");
+                callback.error("Free-tier providers unavailable (tried "+unavailable.attempted+
+                    " request(s)). Local deterministic fallback may be available.");
+            }catch(InterruptedException stopped){
+                Thread.currentThread().interrupt();
+                callback.error("Model request interrupted; no result was accepted");
+            }catch(RuntimeException unexpected){
+                record("[Mesh] Inference engine failed safely");
+                callback.error("Free inference could not complete; no project action was executed.");
+            }
         });
     }
     public synchronized String meshStatus(){
         long now=SystemClock.elapsedRealtime();
         StringBuilder sb=new StringBuilder("Free provider mesh (observed only)\n");
+        sb.append("Last successful route: ").append(lastActiveRoute).append('\n');
         for(int i=0;i<PUBLIC_ROUTES.length;i++){
             sb.append(PUBLIC_ROUTES[i][0]).append(": ")
-              .append(mesh.blockedFor(i,now)>0 ? "cooldown "+(mesh.blockedFor(i,now)/1000)+"s" : "eligible")
+              .append(mesh.blockedFor(i,now)>0 ?
+                  "cooldown "+(mesh.blockedFor(i,now)/1000)+"s" : "eligible")
               .append(" · success ").append(mesh.successes(i))
               .append(" · failures ").append(mesh.failures(i))
               .append(" · score ").append(String.format(java.util.Locale.ROOT,"%.1f",mesh.score(i)))
               .append('\n');
         }
+        for(int family=1;family<FAMILIES.length;family++){
+            int index=4+family;
+            if(!getEndpoint(family).isEmpty()){
+                sb.append(FAMILIES[family]).append(": ")
+                    .append(mesh.blockedFor(index,now)>0 ?
+                        "cooldown "+mesh.blockedFor(index,now)/1000+"s":"eligible")
+                    .append(" · successes ").append(mesh.successes(index)).append('\n');
+            }
+        }
+        sb.append("\nRecent routing events:\n");
+        for(String event:recentEvents)sb.append(event).append('\n');
         return sb.toString();
     }
     private static final class ProviderError extends Exception {
         final int code;
-        ProviderError(int code){super("HTTP "+code);this.code=code;}
+        final long retryAfterMs;
+        ProviderError(int code,long retryAfterMs){
+            super("HTTP "+code);this.code=code;this.retryAfterMs=retryAfterMs;
+        }
     }
-    private String request(String endpoint,String model,JSONArray messages,String key) throws Exception {
+    private static long retryAfter(String header){
+        if(header==null||header.isEmpty())return 0;
+        try{
+            long seconds=Long.parseLong(header.trim());
+            return Math.max(0,Math.min(3_600_000L,seconds>=3600?3_600_000L:seconds*1000L));
+        }catch(NumberFormatException ignored){}
+        try{
+            long delay=java.time.Duration.between(java.time.ZonedDateTime.now(),
+                java.time.ZonedDateTime.parse(header,java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME))
+                .toMillis();
+            return Math.max(0,Math.min(3_600_000L,delay));
+        }catch(Exception ignored){return 0;}
+    }
+    private String request(String endpoint,String model,String serialized,String key,long remainingMs) throws Exception {
         URL url=new URL(endpoint);
         if(!"https".equalsIgnoreCase(url.getProtocol())||url.getUserInfo()!=null)
             throw new IllegalArgumentException("Non-HTTPS gateway rejected");
         HttpURLConnection conn=(HttpURLConnection)url.openConnection();
         conn.setInstanceFollowRedirects(false);
-        conn.setConnectTimeout(8000);
-        conn.setReadTimeout(16000);
+        int connectMs=(int)Math.min(4500,Math.max(1000,remainingMs/3));
+        int readMs=(int)Math.min(8500,Math.max(1000,remainingMs-connectMs-500));
+        conn.setConnectTimeout(connectMs);
+        conn.setReadTimeout(readMs);
+        long deadline=SystemClock.elapsedRealtime()+Math.min(remainingMs,21_000L);
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Accept","application/json");
         conn.setRequestProperty("Content-Type","application/json");
         if(!key.isEmpty())conn.setRequestProperty("Authorization","Bearer "+key);
         conn.setDoOutput(true);
-        JSONObject body=new JSONObject();
+        // Create a provider-specific envelope without changing the frozen conversation.
+        JSONObject body=new JSONObject(serialized);
         body.put("model",model.isEmpty()?"auto":model);
-        body.put("messages",messages);
-        body.put("stream",false);
-        body.put("temperature",0.1);
+        body.put("max_tokens",1600); // bounded output: free quotas are finite
         byte[] data=body.toString().getBytes(StandardCharsets.UTF_8);
         if(data.length>100000)throw new IllegalStateException("Task context exceeds 100 KB");
         try {
             try(OutputStream out=conn.getOutputStream()){out.write(data);}
             int response=conn.getResponseCode();
-            if(response!=200)throw new ProviderError(response);
+            if(response!=200)throw new ProviderError(response,retryAfter(conn.getHeaderField("Retry-After")));
             if(conn.getContentLength()>250000)throw new IllegalStateException("Response too large");
             byte[] raw;
             try(InputStream input=conn.getInputStream()){
                 java.io.ByteArrayOutputStream buffer=new java.io.ByteArrayOutputStream();
                 byte[] part=new byte[4096];int n;
-                while((n=input.read(part))!=-1){
+                while(true){
+                    if(SystemClock.elapsedRealtime()>deadline)
+                        throw new SocketTimeoutException("Bounded provider response deadline exceeded");
+                    n=input.read(part);
+                    if(n==-1)break;
                     buffer.write(part,0,n);
                     if(buffer.size()>250000)throw new IllegalStateException("Response limit reached");
                 }

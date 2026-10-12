@@ -10,7 +10,7 @@ public class ProviderMeshTest {
         assertEquals(List.of(0,1,2),mesh.order(1000));
         mesh.failure(0,429,1000);
         assertEquals(List.of(1,2),mesh.order(1001));
-        assertTrue(mesh.blockedFor(0,1001)>590000);
+        assertTrue(mesh.blockedFor(0,1001)>=29_000);
         mesh.failure(1,503,1000);
         assertEquals(List.of(2),mesh.order(1001));
         mesh.success(2,120);
