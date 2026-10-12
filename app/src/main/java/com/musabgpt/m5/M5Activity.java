@@ -3,6 +3,8 @@ package com.musabgpt.m5;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -41,6 +43,9 @@ public final class M5Activity extends Activity {
     private TextView connection;
     private final ArrayList<String> feed=new ArrayList<>();
     private TermuxBridge termux;
+    private ProjectExporter exporter;
+    private static final int REQUEST_EXPORT_ZIP=940;
+    private String pendingExportProject="";
     private FreeModels models;
     private PhoneTools phone;
     private NativeAgent agent;
@@ -57,6 +62,7 @@ public final class M5Activity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         termux=new TermuxBridge(this);
+        exporter=new ProjectExporter(this,termux);
         models=new FreeModels(this);
         phone=new PhoneTools(this);
         agent=new NativeAgent(termux,models,phone,new NativeAgent.Screen() {
@@ -224,6 +230,7 @@ public final class M5Activity extends Activity {
                     boolean folder="directory".equals(file.optString("type"));
                     TextView row=label((folder?"▸  ":"📄  ")+path,14,folder?ACCENT:Color.WHITE);
                     if(!folder)row.setOnClickListener(v->openFile(path));
+                    else row.setOnClickListener(v->exportProjectDialog(path));
                     rows.addView(row);
                 }
                 if(files==null||files.length()==0)rows.addView(label("Workspace is empty. Create a new file.",14,MUTED));
@@ -232,6 +239,41 @@ public final class M5Activity extends Activity {
             @Override public void failed(String message){showError("Explorer",message);}
         });
     }
+    private void exportProjectDialog(String relative){
+        new AlertDialog.Builder(this).setTitle("Folder: "+relative)
+            .setMessage("Export source files from this folder to a ZIP file on your phone. No network is used.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Export ZIP",(d,w)->{
+                pendingExportProject=relative;
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.setType("application/zip");
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.putExtra(Intent.EXTRA_TITLE,relative.replace('/','_')+".zip");
+                startActivityForResult(intent,REQUEST_EXPORT_ZIP);
+            }).show();
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=REQUEST_EXPORT_ZIP)return;
+        String name=pendingExportProject;
+        pendingExportProject="";
+        if(resultCode!=Activity.RESULT_OK||data==null||data.getData()==null)return;
+        Uri destination=data.getData();
+        status("● Exporting ZIP…");
+        exporter.save(name,destination,new ProjectExporter.Result(){
+            @Override public void finished(int files,int bytes){
+                status("● Termux ready");
+                new AlertDialog.Builder(M5Activity.this).setTitle("ZIP exported")
+                    .setMessage(files+" source file(s), "+bytes+" bytes saved to your selected Android document.")
+                    .setPositiveButton("OK",null).show();
+            }
+            @Override public void failed(String error){
+                status("● Export failed");
+                showError("ZIP incomplete",error+" — an incomplete file may remain at the chosen destination.");
+            }
+        });
+    }
+
     private void openFile(String path) {
         termux.tool("read",new String[]{path},new TermuxBridge.Callback(){
             @Override public void finished(JSONObject file){
