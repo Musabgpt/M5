@@ -18,11 +18,11 @@ test('native JS check+run returns real stdout and exit result',async()=>{
   try{
     assert.equal(run(home,'ping').body.ok,true);
     assert.equal(run(home,'write','hello.mjs',Buffer.from('console.log("REAL_RESULT_42")\n').toString('base64'),'').body.ok,true);
-    const syntax=run(home,'check_file','hello.mjs').body;
+    const syntax=run(home,'check_file','hello.mjs',run(home,'read','hello.mjs').body.hash).body;
     assert.equal(syntax.verified,true);
     assert.equal(syntax.mode,'check');
     assert.equal(syntax.exitCode,0);
-    const executed=run(home,'run_file','hello.mjs').body;
+    const executed=run(home,'run_file','hello.mjs',run(home,'read','hello.mjs').body.hash).body;
     assert.equal(executed.success,true);
     assert.match(executed.stdout,/REAL_RESULT_42/);
     assert.equal(executed.exitCode,0);
@@ -70,4 +70,24 @@ test('bundled Termux bridge includes exactly the audited runtime source',async()
  assert.deepEqual(packaged,source);
  const android=await fs.readFile(new URL('../app/src/main/java/com/musabgpt/m5/TermuxBridge.java',import.meta.url),'utf8');
  assert.match(android,/check_file\|run_file/);
+});
+
+
+test('source execution is tied to the exact version the editor read',async()=>{
+  const home=await fs.mkdtemp(path.join(os.tmpdir(),'m5-verified-run-'));
+  try{
+    run(home,'ping');
+    const first=run(home,'write','check.mjs',Buffer.from('console.log("SAFE")\n').toString('base64'),'').body;
+    assert.equal(first.ok,true);
+    await fs.writeFile(path.join(home,'m5-workspace','check.mjs'),'console.log("CHANGED")\n');
+    const stale=run(home,'run_file','check.mjs',first.hash).body;
+    assert.equal(stale.ok,false);
+    assert.match(stale.error,/changed/);
+    const missing=run(home,'run_file','check.mjs').body;
+    assert.equal(missing.ok,false);
+    assert.match(missing.error,/requires/);
+    const valid=run(home,'run_file','check.mjs',run(home,'read','check.mjs').body.hash).body;
+    assert.equal(valid.success,true);
+    assert.match(valid.stdout,/CHANGED/);
+  }finally{await fs.rm(home,{recursive:true,force:true});}
 });

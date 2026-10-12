@@ -152,10 +152,15 @@ async function command(value,timeout=30000) {
  * selected workspace file. No shell interpolation. Running code can still
  * access the Termux user's files/network; the Android UI requires consent.
  */
-async function sourceCommand(mode,relative){
+async function sourceCommand(mode,relative,expectedHash){
   const filename=await target(relative);
   const stat=await fs.stat(filename);
   if(!stat.isFile()||stat.size>MAX_FILE)fail('Select a regular text source file smaller than 40 KB');
+  if(mode==='run' && !/^[0-9a-f]{64}$/.test(expectedHash||''))fail('Run requires a read-backed SHA-256 content hash');
+  if(expectedHash){
+    if(!/^[0-9a-f]{64}$/.test(expectedHash))fail('Invalid source content hash');
+    if(sha(await fs.readFile(filename))!==expectedHash)fail('Source file changed since last read; reload before executing');
+  }
   const ext=path.extname(filename).toLowerCase();
   let commandName,args;
   if(ext==='.js'||ext==='.mjs'||ext==='.cjs'){
@@ -203,8 +208,8 @@ async function main(){
   switch(verb){
     case 'ping':data={ready:true,runtime:'native-termux',root:ROOT};break;
     case 'scaffold':data=await scaffoldProject(args[0],args[1]);break;
-    case 'check_file':data=await sourceCommand('check',args[0]);break;
-    case 'run_file':data=await sourceCommand('run',args[0]);break;
+    case 'check_file':data=await sourceCommand('check',args[0],args[1]);break;
+    case 'run_file':data=await sourceCommand('run',args[0],args[1]);break;
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
     case 'write':data=await write(args[0],args[1],args[2]);break;
