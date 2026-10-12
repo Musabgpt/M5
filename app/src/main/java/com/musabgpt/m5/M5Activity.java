@@ -274,11 +274,18 @@ public final class M5Activity extends Activity {
             if(paths.isEmpty()){showError("Saved drafts","No unsaved drafts stored.");return;}
             new AlertDialog.Builder(this).setTitle("Recover encrypted drafts")
                 .setItems(paths.toArray(new String[0]),(dialog,index)->{
-                    if(!connected){
-                        showError("Termux required","Connect Termux, then recover this file so its current version can be checked.");
-                        return;
-                    }
-                    openFile(paths.get(index));
+                    String path=paths.get(index);
+                    if(connected){openFile(path);return;}
+                    try{
+                        DraftVault.Draft draft=draftVault.get(path);
+                        if(draft==null)return;
+                        rememberDraft();
+                        selectedFile=path;
+                        originalHash=draft.savedHash;
+                        lastSavedContent="";
+                        unsavedDrafts.put(path,draft.contents);
+                        showPanel("files");
+                    }catch(Exception error){showError("Cannot recover draft",error.getMessage());}
                 }).setNegativeButton("Close",null).show();
         }catch(Exception error){showError("Draft recovery",error.getMessage());}
     }
@@ -327,7 +334,10 @@ public final class M5Activity extends Activity {
         if(selectedFile.isEmpty())actions.addView(button("Drafts",this::showSavedDrafts),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(actions);
-        if(!connected){info("No server required. Connect Termux to list and edit files in ~/m5-workspace.");return;}
+        if(!connected){
+            info("Offline editing: encrypted drafts are available. Connect Termux to save, run or browse project files.");
+            if(selectedFile.isEmpty())return;
+        }
         if(!selectedFile.isEmpty()) {
             LinearLayout work=horizontal();
             work.addView(button("Check",()->sourceAction(false)),new LinearLayout.LayoutParams(0,dp(42),1));
