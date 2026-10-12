@@ -201,6 +201,31 @@ async function sourceCommand(mode,relative,expectedHash){
   });
 }
 
+/**
+ * Bounded, source-only project audit. Does not execute application logic.
+ * Project source is parsed by language runtimes; results show real exit codes.
+ */
+async function auditProject(project){
+  const listResult=await list(project);
+  const candidates=listResult.files
+    .filter(f=>f.type==='file' && /\.(?:js|mjs|cjs|py|sh)$/.test(f.path));
+  const sample=candidates.slice(0,12);
+  const results=[];
+  for(const file of sample){
+    try{
+      const found=await sourceCommand('check',file.path);
+      results.push({path:file.path,success:found.success,exitCode:found.exitCode,
+        error:found.stderr.slice(0,550),timedOut:found.timedOut});
+    }catch(e){
+      results.push({path:file.path,success:false,error:String(e.message||e).slice(0,450)});
+    }
+  }
+  const passed=results.filter(x=>x.success).length;
+  return {project,checked:results.length,passed,failed:results.length-passed,
+    limited:listResult.limited||candidates.length>sample.length,
+    results,note:'Syntax checks only; not a unit-test suite or proof of runtime correctness'};
+}
+
 async function main(){
   await fs.mkdir(ROOT,{recursive:true,mode:0o700});
   const [verb,...args]=process.argv.slice(2);
@@ -209,6 +234,7 @@ async function main(){
     case 'ping':data={ready:true,runtime:'native-termux',root:ROOT};break;
     case 'scaffold':data=await scaffoldProject(args[0],args[1]);break;
     case 'check_file':data=await sourceCommand('check',args[0],args[1]);break;
+    case 'audit_project':data=await auditProject(args[0]||'');break;
     case 'run_file':data=await sourceCommand('run',args[0],args[1]);break;
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
