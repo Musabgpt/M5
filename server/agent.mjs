@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { TOOL_SPECS, validateCall, invokeTool } from './tools.mjs';
 import { chatCompletion } from './providers.mjs';
+import { previewAgentEdit } from './diff.mjs';
 
 const ACTION_RE = /\b(?:create|build|implement|edit|fix|test|run|modify|refactor|write|install|deploy|delete|update|generate)\b|اكتب|عدّل|عدل|أنشئ|انشئ|ابن|طوّر|طور|اصلح|صلح|نفّذ|نفذ|اختبر|ابني/i;
 
@@ -122,6 +123,11 @@ export class AgentManager {
             path: call.arguments.path || '', command: call.arguments.command || '',
             preview: (call.name === 'write_file' ? call.arguments.content : call.name === 'replace_text' ? JSON.stringify({ oldText: call.arguments.oldText, newText: call.arguments.newText }) : '').slice(0, 6000)
           };
+          if (spec.risk === 'write') {
+            try { display.diff = await previewAgentEdit(this.workspace, call.name, call.arguments); }
+            catch (error) { this.emit(job, 'tool_error', { name: call.name, error: 'Cannot review proposed edit: ' + error.message });
+              messages.push({ role: 'user', content: 'Edit rejected before approval: ' + error.message }); continue; }
+          }
           const approved = await new Promise(resolve => {
             job.status = 'approval';
             job.pending = { display, resolve };
