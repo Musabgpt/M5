@@ -415,15 +415,58 @@ public final class M5Activity extends Activity {
         });
     }
 
-    private void openFile(String path) {
+    private void openFile(String path){
+        int request=++fileOpenRequest;
         termux.tool("read",new String[]{path},new TermuxBridge.Callback(){
             @Override public void finished(JSONObject file){
-                selectedFile=path;originalHash=file.optString("hash","");
-                lastSavedContent=file.optString("content","");
-                showPanel("files");
+                if(request!=fileOpenRequest||!"files".equals(activePanel))return;
+                loadEditor(path,file.optString("hash",""),file.optString("content",""));
             }
-            @Override public void failed(String message){showError("Open file",message);}
+            @Override public void failed(String error){
+                if(request!=fileOpenRequest)return;
+                try{
+                    DraftVault.Draft draft=draftVault.get(path);
+                    if(draft!=null&&error.contains("ENOENT")) {
+                        loadEditor(path,"","");
+                        return;
+                    }
+                }catch(Exception ignored){}
+                showError("Open file",error);
+            }
         });
+    }
+    private void loadEditor(String path,String hash,String diskContent){
+        rememberDraft();
+        selectedFile=path;
+        originalHash=hash;
+        lastSavedContent=diskContent;
+        try{
+            DraftVault.Draft draft=draftVault.get(path);
+            if(draft==null||draft.contents.equals(diskContent)){
+                unsavedDrafts.remove(path);
+                if(draft!=null)draftVault.remove(path);
+                showPanel("files");return;
+            }
+            if(!draft.savedHash.equals(hash)){
+                new AlertDialog.Builder(this)
+                    .setTitle("File changed since draft was saved")
+                    .setMessage("This draft is based on another version of the file. Choose which version to edit. Restoring the draft will NOT save it to the project automatically.")
+                    .setNegativeButton("Use disk version",(d,w)->{
+                        unsavedDrafts.remove(path);
+                        try{draftVault.remove(path);}catch(Exception ignored){}
+                        showPanel("files");
+                    })
+                    .setPositiveButton("Review recovered draft",(d,w)->{
+                        unsavedDrafts.put(path,draft.contents);
+                        showPanel("files");
+                    }).show();
+                return;
+            }
+            unsavedDrafts.put(path,draft.contents);
+        }catch(Exception error){
+            showError("Draft recovery error","Disk file was not changed: "+error.getMessage());
+        }
+        showPanel("files");
     }
     private void newFile(){
         EditText name=input("Relative filename: e.g. main.py",1);
@@ -431,9 +474,8 @@ public final class M5Activity extends Activity {
             .setView(name).setNegativeButton("Cancel",null).setPositiveButton("Create",(d,w)->{
                 String path=name.getText().toString().trim();
                 if(path.isEmpty()){showError("File name","Enter a path.");return;}
-                selectedFile=path;originalHash="";lastSavedContent="";
-                unsavedDrafts.remove(path);
-                showPanel("files");
+                ++fileOpenRequest;
+                loadEditor(path,"","");
             }).show();
     }
     private void searchWorkspace(){
