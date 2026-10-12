@@ -170,7 +170,7 @@ public final class M5Activity extends Activity {
             return insets;
         });
         toolbar=horizontal();toolbar.setPadding(dp(6),dp(5),dp(6),dp(5));toolbar.setBackgroundColor(SURFACE);
-        TextView logo=label("M5 MESH 0.10",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
+        TextView logo=label("M5 AGENT PTY 0.11",16,ACCENT);logo.setTypeface(null,Typeface.BOLD);
         toolbar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
         connection=label("↻ Connect Termux",13,ACCENT);
         connection.setContentDescription("Connect M5 to Termux tools");
