@@ -316,6 +316,12 @@ public final class M5Activity extends Activity {
             agent.start(goal,providerPicker.getSelectedItemPosition(),modePicker.getSelectedItemPosition()==0?"plan":"agent");
         }),new LinearLayout.LayoutParams(0,dp(48),1));
         row.addView(button("Stop",()->{agent.stop();agentActive=false;}),new LinearLayout.LayoutParams(0,dp(48),1));
+        row.addView(button("Clear",()->new AlertDialog.Builder(this)
+            .setTitle("Clear current chat?")
+            .setMessage("Clear the visible task feed and short-term chat context. Project files are preserved.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Clear",(d,w)->{agent.clearConversation();feed.clear();showPanel("agent");})
+            .show()),new LinearLayout.LayoutParams(0,dp(48),1));
         body.addView(row);
     }
     private ArrayAdapter<String> spinnerAdapter(String[] values){
