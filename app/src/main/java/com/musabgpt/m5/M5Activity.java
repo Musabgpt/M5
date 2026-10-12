@@ -316,7 +316,7 @@ public final class M5Activity extends Activity {
             .setView(name).setNegativeButton("Cancel",null).setPositiveButton("Create",(d,w)->{
                 String path=name.getText().toString().trim();
                 if(path.isEmpty()){showError("File name","Enter a path.");return;}
-                selectedFile=path;originalHash=EMPTY_HASH;showPanel("files");
+                selectedFile=path;originalHash="";showPanel("files");
                 if(editor!=null)editor.setText("");
             }).show();
     }
