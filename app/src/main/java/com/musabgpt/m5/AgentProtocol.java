@@ -58,12 +58,12 @@ public final class AgentProtocol {
                 else if(a instanceof String) arguments=new JSONObject((String)a);
                 else {
                     arguments=new JSONObject();
-                    for(String k:new String[]{"path","query","command","content","expectedHash","summary"}) {
+                    for(String k:new String[]{"path","query","command","content","expectedHash","summary","app","id","text","direction"}) {
                         if(tool.has(k))arguments.put(k,tool.get(k));
                     }
                 }
             }
-            if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff|finish"))
+            if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff|phone_apps|phone_open|phone_observe|phone_click|phone_type|phone_scroll|phone_back|phone_home|finish"))
                 return new Result(null,"Unsupported model tool: "+name);
             JSONObject normalized=new JSONObject();
             normalized.put("name",name);
