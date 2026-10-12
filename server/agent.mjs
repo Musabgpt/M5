@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { TOOL_SPECS, validateCall, invokeTool } from './tools.mjs';
 import { chatCompletion } from './providers.mjs';
 import { previewAgentEdit } from './diff.mjs';
+import { isVerificationCommand } from './verification.mjs';
 
 const ACTION_RE = /\b(?:create|build|implement|edit|fix|test|run|modify|refactor|write|install|deploy|delete|update|generate)\b|اكتب|عدّل|عدل|أنشئ|انشئ|ابن|طوّر|طور|اصلح|صلح|نفّذ|نفذ|اختبر|ابني/i;
 
@@ -61,7 +62,7 @@ export class AgentManager {
       this.jobs.delete(oldest);
     }
     const id = crypto.randomUUID();
-    const job = { id, goal, family, mode, status: 'running', createdAt: Date.now(), events: [], nextIndex: 0, pending: null, evidence: { writes: 0, checks: 0 }, controller: new AbortController() };
+    const job = { id, goal, family, mode, status: 'running', createdAt: Date.now(), events: [], nextIndex: 0, pending: null, evidence: { writes: 0, checks: 0, executions: 0 }, controller: new AbortController() };
     this.jobs.set(id, job);
     this.run(job).catch(e => { if (job.status !== 'cancelled') { job.status = 'failed'; this.emit(job, 'error', e.message); } });
     return this.snapshot(id);
@@ -100,7 +101,7 @@ export class AgentManager {
       catch (e) { job.status = 'blocked'; this.emit(job, 'error', 'Invalid model tool call: ' + e.message); return; }
       if (!calls.length) {
         this.emit(job, 'answer', (response.content || '').slice(0, 12000));
-        const noEvidence = job.mode === 'agent' && ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks;
+        const noEvidence = job.mode === 'agent' && ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.executions;
         job.status = (job.evidence.writes && !job.evidence.checks) || noEvidence ? 'blocked' : 'completed';
         if (job.status === 'blocked') this.emit(job, 'warning', 'No verifiable project action, or files changed without a successful check');
         return;
@@ -143,8 +144,11 @@ export class AgentManager {
               this.emit(job, 'checkpoint', checkpoint);
             }
             result = await invokeTool(this.workspace, call.name, call.arguments, { signal: job.controller.signal, contextIndex: this.contextIndex });
-            if (spec.risk === 'write') { job.evidence.writes++; this.contextIndex?.invalidate(call.arguments.path); }
-            if (call.name === 'run_command' && result.success) job.evidence.checks++;
+            if (spec.risk === 'write') { job.evidence.writes++; job.evidence.checks = 0; this.contextIndex?.invalidate(call.arguments.path); }
+            if (call.name === 'run_command' && result.success) {
+              job.evidence.executions++;
+              if (isVerificationCommand(call.arguments.command)) job.evidence.checks++;
+            }
             this.emit(job, 'result', { name: call.name, observed: JSON.stringify(result).slice(0, 12000) });
           } catch (e) {
             result = { error: e.message };
@@ -153,7 +157,7 @@ export class AgentManager {
         }
         messages.push({ role: 'user', content: 'OBSERVED result for ' + call.name + ': ' + JSON.stringify(result).slice(0, 14000) });
         if (call.name === 'finish') {
-          if ((job.evidence.writes && !job.evidence.checks) || (job.mode === 'agent' && ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks)) {
+          if ((job.evidence.writes && !job.evidence.checks) || (job.mode === 'agent' && ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.executions)) {
             job.status = 'blocked'; this.emit(job, 'warning', 'No verified project action or successful check');
           } else {
             job.status = 'completed'; this.emit(job, 'answer', result.summary);
