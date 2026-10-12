@@ -45,3 +45,21 @@ Free provider choices now include optional official Groq/OpenRouter/Google AI St
 - New native source-creation and model-artifact tests; CI cancels superseded PR runs to conserve free build minutes.
 
 This is a tangible native agent/coding preview, **not full Cursor parity**. Features such as full LSP, interactive PTY, extension host, semantic repo-indexing on Android, durable multi-agent execution and dependable broad phone automation remain unfinished.
+
+
+## Native Studio 0.6 — checked execution and safer editing
+
+Development PR: https://github.com/Musabgpt/M5/pull/4
+
+This version installs side by side as `com.musabgpt.m5.studio6` (**M5 Studio 0.6**). Previous Studio and Phone Agent installations and their private data are unchanged.
+
+- The **Files** editor now offers **Check** and **Run file** for actual `.js`, `.mjs`, `.cjs`, `.py`, and `.sh` sources. Tools run in Termux directly via one-shot RUN_COMMAND, show observed stdout/stderr, exit codes, timeouts and verification status. **Run** requires a separate user approval since source code has Termux user's privileges.
+- The coding agent can request `check_file {path}` or `run_file {path}` as first-class, permission-controlled tools. Check uses syntax parsing, not arbitrary shell string generation. Verified successful checks can satisfy post-edit validation, but compile/syntax success is **not** equivalent to running end-to-end tests.
+- New file writes are **create-only**; existing files require a SHA-256 hash from a prior read. The previous empty-file overwrite loophole was removed.
+- The source editor preserves unsaved edits in memory while switching its tabs, and refuses to Check/Run content which differs from the saved copy on disk. **Unsaved drafts are not currently crash-proof**, so save before closing or killing the app.
+- Files Explorer includes **Search** with clickable file/line snippets from the real Termux workspace.
+- Integration tests actually create source files, execute a Node program, check intentionally broken syntax, and validate path and symlink refusals. The Termux bridge inside the APK must exactly match the audited source file.
+
+Usage: install the debug APK from the successful Android Actions workflow on PR #4, connect Termux, create a project or open source in Files, **Save**, then **Check** or **Run file**. For HTML projects, check the included `app.js`; HTML browser rendering still requires a browser.
+
+Not implemented: a full VS Code language server, interactive PTY, reliable phone automation across all applications, production-grade project builds, semantic autocomplete, or persistent multi-agent execution. A passing Android CI build does not establish physical Samsung acceptance.

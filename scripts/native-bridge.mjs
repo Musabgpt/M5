@@ -85,7 +85,11 @@ async function write(relative,b64,expected) {
     existed=true;
     original=await fs.readFile(file);
   }catch(e){if(e.code!=='ENOENT')throw e;}
-  if(sha(original)!==expected && !(existed===false && expected===''))fail('File changed since it was read; reload before saving');
+  // Empty expectedHash means CREATE-ONLY. SHA-256 means UPDATE of a file
+  // explicitly read before editing. Never clobber pre-existing empty files.
+  if(existed && (!expected || sha(original)!==expected))
+    fail('Existing file changed or not opened for editing; reload it before saving');
+  if(!existed && expected!=='')fail('File did not exist when read; create using an empty expected hash');
   const temp=file+'.m5-'+crypto.randomBytes(6).toString('hex');
   try {
     await fs.writeFile(temp,bytes,{flag:'wx',mode:0o600});
@@ -142,6 +146,56 @@ async function command(value,timeout=30000) {
     child.once('close',code=>{clearTimeout(timer);resolve({code,stdout,stderr,truncated,timedOut,success:code===0&&!timedOut});});
   });
 }
+
+/**
+ * Structured syntax checking and explicit source execution, confined to the
+ * selected workspace file. No shell interpolation. Running code can still
+ * access the Termux user's files/network; the Android UI requires consent.
+ */
+async function sourceCommand(mode,relative){
+  const filename=await target(relative);
+  const stat=await fs.stat(filename);
+  if(!stat.isFile()||stat.size>MAX_FILE)fail('Select a regular text source file smaller than 40 KB');
+  const ext=path.extname(filename).toLowerCase();
+  let commandName,args;
+  if(ext==='.js'||ext==='.mjs'||ext==='.cjs'){
+    commandName=process.execPath;
+    args=mode==='check'?['--check',filename]:[filename];
+  }else if(ext==='.py'){
+    commandName='python';
+    args=mode==='check'
+      ?['-B','-c','import ast,sys;ast.parse(open(sys.argv[1],encoding="utf-8").read(),filename=sys.argv[1])',filename]
+      :['-B',filename];
+  }else if(ext==='.sh'){
+    commandName='bash';
+    args=mode==='check'?['-n',filename]:[filename];
+  }else fail('Supported files for Check/Run: .js, .mjs, .cjs, .py, .sh');
+  const cwd=path.dirname(filename);
+  const env=Object.fromEntries(
+    ['PATH','HOME','TMPDIR','LANG','TERM'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])
+  );
+  const timeout=mode==='check'?15000:30000;
+  return await new Promise((resolve,reject)=>{
+    let stdout='',stderr='',truncated=false,timedOut=false,finished=false;
+    const child=spawn(commandName,args,{cwd,env,stdio:['ignore','pipe','pipe']});
+    const clip=(part,key,limit)=>{
+      const text=part.toString('utf8');
+      if(key.length+text.length>limit)truncated=true;
+      return (key+text).slice(0,limit);
+    };
+    child.stdout.on('data',b=>{stdout=clip(b,stdout,14000);});
+    child.stderr.on('data',b=>{stderr=clip(b,stderr,10000);});
+    const clock=setTimeout(()=>{timedOut=true;child.kill('SIGKILL');},timeout);
+    child.once('error',error=>{if(!finished){finished=true;clearTimeout(clock);reject(error);}});
+    child.once('close',(code,signal)=>{
+      if(finished)return;
+      finished=true;clearTimeout(clock);
+      resolve({file:relative,mode,exitCode:code,signal,success:code===0&&!timedOut,
+        stdout,stderr,truncated,timedOut,verified:mode==='check'&&code===0&&!timedOut});
+    });
+  });
+}
+
 async function main(){
   await fs.mkdir(ROOT,{recursive:true,mode:0o700});
   const [verb,...args]=process.argv.slice(2);
@@ -149,6 +203,8 @@ async function main(){
   switch(verb){
     case 'ping':data={ready:true,runtime:'native-termux',root:ROOT};break;
     case 'scaffold':data=await scaffoldProject(args[0],args[1]);break;
+    case 'check_file':data=await sourceCommand('check',args[0]);break;
+    case 'run_file':data=await sourceCommand('run',args[0]);break;
     case 'list':data=await list(args[0]||'');break;
     case 'read':data=await read(args[0]);break;
     case 'write':data=await write(args[0],args[1],args[2]);break;

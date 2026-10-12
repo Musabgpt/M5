@@ -40,3 +40,20 @@ Service reference: https://developer.android.com/reference/android/accessibility
 - Confirm the APK uses Android widgets and Termux one-shot processes, not a localhost server.
 
 **Unverified on physical phone until tested:** Accessibility interactions within target apps, external browser HTML preview, ZIP export to each document provider, device-specific keyboard/IME behavior, background recovery.
+
+
+## Native Studio 0.6 real-device acceptance
+
+- Install `com.musabgpt.m5.studio6` alongside Studio 0.5. Confirm older app and private projects remain unchanged.
+- Create the offline HTML calculator project. Open `app.js`, press **Check** and confirm the actual exitCode 0. Test an intentionally malformed JS file and verify a non-zero exit and error output.
+- Open a small Node `.mjs` file that prints a unique value; press **Run file**, approve the confirmation and verify that exact stdout and code 0 appear.
+- Deny the Run confirmation; ensure no program executes.
+- Modify source but do not save it. Verify Check and Run refuse to execute stale disk contents. Switch tabs and return: unsaved source must still be shown.
+- Create a brand-new source file, save it and verify it appears. Recreate an existing empty file through the create-only path and confirm it is not overwritten.
+- Search for a distinctive symbol, open a result and inspect the correct file. Ensure secrets, symlinks and workspace traversal are not displayed or modified.
+- Agent tool protocol: request `check_file` on a real file, then attempt an `run_file` tool call and verify human approval happens before execution.
+- Run a code file that returns a non-zero exit; verify the UI shows failure, not successful completion.
+- Rotate the device, background it and reopen; save any in-progress source first. Unverified crash-survival must not be assumed.
+- Export the project as ZIP and verify the source contents match the workspace.
+
+**Known limitation:** `Check` validates Python/Node/shell syntax only, not web browser behavior or a complete unit test suite. Executing untrusted code inside Termux is dangerous; do not approve it.

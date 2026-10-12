@@ -37,6 +37,7 @@ public final class NativeAgent {
     + "Project workspace is controlled by Termux with explicit user consent. "
     + "Available tools: list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
+    + "check_file {path}, run_file {path}, "
     + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
     + "phone_open_url {url}, phone_dial {number}, phone_sms_draft {number,text}, "
     + "phone_click {id}, phone_type {id,text}, phone_scroll {id,direction}, phone_back {}, phone_home {}, finish {summary}. "
@@ -196,8 +197,7 @@ public final class NativeAgent {
                 if(stopped || !active)return;
                 if(!approved){close("Blocked: proposed model-generated file was not approved.");return;}
                 String encoded=Base64.encodeToString(candidate.content.getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP);
-                termux.tool("write",new String[]{candidate.path,encoded,
-                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+                termux.tool("write",new String[]{candidate.path,encoded,""},
                     new TermuxBridge.Callback(){
                         @Override public void finished(JSONObject result){
                             if(stopped || !active)return;
@@ -253,10 +253,10 @@ public final class NativeAgent {
             runPhone(name,toolArgs);
             return;
         }
-        if(!name.matches("list_files|read_file|search_code|write_file|run_command|git_status|git_diff")){
+        if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|git_status|git_diff")){
             observed(name,"REJECTED: unregistered tool");return;
         }
-        final boolean modifying=name.equals("write_file")||name.equals("run_command");
+        final boolean modifying=name.equals("write_file")||name.equals("run_command")||name.equals("run_file");
         if(!termux.isConnected()) {
             ui.log("Termux is not connected. No project tool was executed.");
             close("Blocked: tap Connect Termux in the top bar, then retry your project task.");
@@ -278,6 +278,7 @@ public final class NativeAgent {
             Base64.encodeToString(args.optString("content","").getBytes(StandardCharsets.UTF_8),Base64.NO_WRAP),
             args.optString("expectedHash","")};
         else if(verb.equals("shell"))params=new String[]{args.optString("command","")};
+        else if(verb.equals("check_file")||verb.equals("run_file"))params=new String[]{args.optString("path","")};
         else params=new String[0];
         Runnable execute=()->{
             ui.log("Tool: "+name+" ("+(toolArgs.optString("path",toolArgs.optString("command","")))+")");
@@ -285,6 +286,8 @@ public final class NativeAgent {
                 @Override public void finished(JSONObject data) {
                     if(stopped)return;
                     if(name.equals("write_file")){writes++;validations=0;}
+                    if(name.equals("check_file") && data.optBoolean("verified"))validations++;
+                    if(name.equals("run_file") && data.optBoolean("success"))validations++;
                     if(name.equals("run_command") && data.optBoolean("success") &&
                         isValidation(toolArgs.optString("command","")))validations++;
                     observed(name,data.toString());
@@ -298,7 +301,9 @@ public final class NativeAgent {
             });
         };
         if(!modifying){execute.run();return;}
-        String detail=name.equals("write_file")
+        String detail=name.equals("run_file")
+          ? "Execute "+args.optString("path","")+" with full Termux user permissions? Source code can access Termux data and network."
+          :name.equals("write_file")
           ? "Write "+args.optString("path","")+"\n"+args.optString("content","").substring(0,Math.min(2500,args.optString("content","").length()))
           : args.optString("command","");
         ui.requestApproval("Approve "+name+"?",detail,approved->{
