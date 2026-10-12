@@ -141,15 +141,36 @@ async function secondary(name) {
     };
   } else if (name === 'git') {
     const bar = element('div', { className:'secondary-actions' });
-    const statusButton = element('button', {}, 'Git status'), diffButton = element('button', {}, 'Git diff');
+    const statusButton = element('button', {}, 'Git status'), diffButton = element('button', {}, 'Git diff'), checkpointButton = element('button', {}, 'Restore files');
     const output = element('div');
-    bar.append(statusButton, diffButton); view.append(bar, output);
+    bar.append(statusButton, diffButton, checkpointButton); view.append(bar, output);
     const inspect = async action => {
       output.replaceChildren();
       try { const data = await api('/api/git/' + action); outputView(output, (data.stdout || '') + '\n' + (data.stderr || '') + '\nExit code: ' + data.code); }
       catch (e) { outputView(output, e.message); }
     };
-    statusButton.onclick = () => inspect('status'); diffButton.onclick = () => inspect('diff'); inspect('status');
+    statusButton.onclick = () => inspect('status'); diffButton.onclick = () => inspect('diff');
+    checkpointButton.onclick = async () => {
+      output.replaceChildren();
+      try {
+        const data = await api('/api/checkpoints');
+        if (!data.entries.length) output.textContent = 'No checkpoints yet';
+        for (const point of data.entries) {
+          const b = element('button', { className:'file-row' }, point.path + ' · ' + point.createdAt + ' · ' + point.id.slice(0, 8));
+          b.onclick = async () => {
+            if (!confirm('Restore checkpoint of ' + point.path + '? This will overwrite the current file or remove a newly created file.')) return;
+            try {
+              let currentHash = '';
+              try { currentHash = (await api('/api/file?path=' + encodeURIComponent(point.path))).sha256; } catch (e) { if (!String(e.message).includes('ENOENT')) throw e; }
+              const response = await post('/api/checkpoints/restore', { id: point.id, expectedCurrentHash: currentHash });
+              notice('Restored ' + response.path); await loadFiles(); if (state.file === response.path && !response.deletedNewFile) await openFile(response.path);
+            } catch (e) { alert('Restore blocked: ' + e.message); }
+          };
+          output.append(b);
+        }
+      } catch (e) { outputView(output, e.message); }
+    };
+    inspect('status');
   } else if (name === 'terminal') {
     view.append(element('p', {}, 'Runs real commands in the workspace via Termux. Output and exit codes are observed; not a full interactive PTY.'));
     const input = element('input', { value:'pwd', placeholder:'Shell command' });
