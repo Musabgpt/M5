@@ -28,3 +28,5 @@ jobs:
         run: npm run check
       - name: Security, free provider and agent integration tests
         run: npm test
+      - name: Persistent Python PTY session integration tests
+        run: python3 -m unittest discover -s tests -p test_pty_session.py -v
