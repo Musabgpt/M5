@@ -104,6 +104,7 @@ public final class NativeAgent {
     }
     private void observed(String tool,String value) {
         if(stopped)return;
+        ui.log("Result of "+tool+": "+(value.length()>1400?value.substring(0,1400)+"…":value));
         messages.put(message("user","OBSERVED result of "+tool+": "+(value.length()>12000?value.substring(0,12000):value)));
         advance();
     }
@@ -122,6 +123,16 @@ public final class NativeAgent {
             observed(name,"REJECTED: unregistered tool");return;
         }
         final boolean modifying=name.equals("write_file")||name.equals("run_command");
+        if(!termux.isConnected()) {
+            ui.log("Termux is not connected. No project tool was executed.");
+            close("Blocked: tap Connect Termux in the top bar, then retry your project task.");
+            return;
+        }
+        if(name.equals("run_command") && args.optString("command","").contains("termux-setup-storage")) {
+            ui.log("Rejected unnecessary shared-storage permission requested by a model.");
+            close("Blocked: termux-setup-storage is not needed for private workspace access.");
+            return;
+        }
         if("plan".equals(mode)&&modifying){observed(name,"REJECTED: Plan mode does not allow changes or command execution");return;}
         String verb=name.equals("list_files")?"list":name.equals("read_file")?"read":name.equals("search_code")?"search":
                 name.equals("write_file")?"write":name.equals("run_command")?"shell":name;
@@ -144,7 +155,12 @@ public final class NativeAgent {
                         isValidation(toolArgs.optString("command","")))validations++;
                     observed(name,data.toString());
                 }
-                @Override public void failed(String message){observed(name,"ERROR: "+message);}
+                @Override public void failed(String message){
+                    if(stopped)return;
+                    ui.log("Tool "+name+" failed: "+message);
+                    if(!termux.isConnected())close("Blocked: Termux unavailable; reconnect in the top bar.");
+                    else observed(name,"ERROR: "+message);
+                }
             });
         };
         if(!modifying){execute.run();return;}
