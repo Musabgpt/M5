@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.m5/
+*.log
+dist/
+build/
+.gradle/
+.idea/
+local.properties
