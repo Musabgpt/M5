@@ -13,8 +13,6 @@ public class OfflineFallbackTest {
         for(String goal:new String[]{"أصلح حسابي البنكي","احذف الصور","افتح واتساب","اشتر سيارة",
             "Build a complex 3D MMORPG game","make coffee","أريد حاسبة HTML لكن لا تكتب كوداً"}){
             // Refusal/unsupported results must remain unambiguous.
-            if(goal.equals("أريد حاسبة HTML لكن لا تكتب كوداً"))
-                continue; // negation is handled by model, do not auto-create this request
             assertNull(goal,OfflineFallback.match(goal));
         }
         assertNull(OfflineFallback.match(null));
