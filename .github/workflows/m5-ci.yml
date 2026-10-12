@@ -15,6 +15,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install open-source CodeMirror build dependencies
+        run: npm install --no-audit --no-fund
+      - name: Bundle offline CodeMirror editor
+        run: |
+          npm run build
+          test -s web/editor.bundle.js
       - name: Syntax checks
         run: npm run check
       - name: Security, free provider and agent integration tests
