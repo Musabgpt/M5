@@ -14,5 +14,10 @@ else
 fi
 mkdir -p "$HOME/m5-workspace"
 cd "$DEST"
+if npm install --no-audit --no-fund && npm run build; then
+  echo "CodeMirror editor installed for offline use"
+else
+  echo "CodeMirror unavailable; M5 retains its basic fallback editor"
+fi
 echo "Run: npm start"
 echo "M5 binds only to 127.0.0.1:8765 and prints a local pairing URL."
