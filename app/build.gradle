@@ -8,8 +8,8 @@ android {
         applicationId 'com.musabgpt.m5'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '0.2.0-native-preview'
+        versionCode 3
+        versionName '0.3.0-native-fix'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -17,7 +17,7 @@ android {
     }
     buildTypes {
         release { minifyEnabled false }
-        debug { applicationIdSuffix '.nativepreview' }
+        debug { applicationIdSuffix '.nativefix' }
     }
 }
 
