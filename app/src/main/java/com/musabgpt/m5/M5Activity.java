@@ -338,7 +338,19 @@ public final class M5Activity extends Activity {
         if(selectedFile.isEmpty())actions.addView(button("Search",()->requireTermux(this::searchWorkspace)),new LinearLayout.LayoutParams(0,dp(48),1));
         if(selectedFile.isEmpty())actions.addView(button("Drafts",this::showSavedDrafts),new LinearLayout.LayoutParams(0,dp(48),1));
         if(!selectedFile.isEmpty())actions.addView(button("Save",()->requireTermux(this::saveFile)),new LinearLayout.LayoutParams(0,dp(48),1));
-        body.addView(actions);
+        // Use horizontally scrollable full-size actions, not cramped 0-width weighted buttons.
+        for(int i=0;i<actions.getChildCount();i++){
+            View item=actions.getChildAt(i);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(106),dp(45));
+            lp.setMargins(dp(3),dp(2),dp(3),dp(2));
+            item.setLayoutParams(lp);
+        }
+        HorizontalScrollView fileActions=new HorizontalScrollView(this);
+        fileActions.setHorizontalScrollBarEnabled(false);
+        fileActions.addView(actions);
+        body.addView(fileActions);
+        if(selectedFile.isEmpty()&&draftVault.count()>0)
+            info("Recovered drafts available: "+draftVault.count()+" · Open Drafts to restore");
         if(!connected){
             info("Offline editing: encrypted drafts are available. Connect Termux to save, run or browse project files.");
             if(selectedFile.isEmpty())return;
