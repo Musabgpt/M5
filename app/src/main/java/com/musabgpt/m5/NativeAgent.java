@@ -35,7 +35,9 @@ public final class NativeAgent {
     + "Available tools: list_files {}, read_file {path}, search_code {query}, "
     + "write_file {path,content,expectedHash}, run_command {command}, "
     + "git_status {}, git_diff {}, phone_apps {}, phone_open {app}, phone_observe {}, "
+    + "phone_open_url {url}, phone_dial {number}, phone_sms_draft {number,text}, "
     + "phone_click {id}, phone_type {id,text}, phone_scroll {id,direction}, phone_back {}, phone_home {}, finish {summary}. "
+    + "Phone SMS tool opens an unsent draft: do not claim a message was delivered. "
     + "For tool use respond with ONLY JSON {\"tool_calls\":[{\"name\":\"read_file\",\"arguments\":{\"path\":\"app.py\"}}]}. "
     + "ONE tool call at a time. For ordinary greetings, answer in plain text WITHOUT calling tools. "
     + "Do not ask for termux-setup-storage: private workspace files need no shared storage permission. "
@@ -214,9 +216,8 @@ public final class NativeAgent {
             close("Blocked: opt-in phone accessibility is not enabled.");
             return;
         }
-        boolean readScreen="phone_observe".equals(name);
-        boolean confirm=(readScreen&&!consentedScreenRead)
-            ||(!readScreen&&!"phone_apps".equals(name));
+        boolean readScreen="phone_observe".equals(name)||"phone_apps".equals(name);
+        boolean confirm=(readScreen&&!consentedScreenRead) || !readScreen;
         Runnable execute=()->{
             try {
                 JSONObject result=phone.run(name,args);
