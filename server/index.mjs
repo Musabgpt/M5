@@ -6,6 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { AgentManager } from './agent.mjs';
 import { CheckpointStore } from './checkpoints.mjs';
+import { IDEManager } from './ide.mjs';
 import { ROUTES } from './providers.mjs';
 import { workspacePath, safeCompare } from './security.mjs';
 import { enumerate, invokeTool } from './tools.mjs';
@@ -22,6 +23,7 @@ const TOKEN = (await fsp.readFile(tokenFile, 'utf8')).trim();
 if (TOKEN.length < 48) throw new Error('Insecure server token');
 const checkpoints = new CheckpointStore({ workspace, state });
 const agent = new AgentManager({ workspace, checkpoints });
+const ide = new IDEManager({ workspace, state });
 const webRoot = path.resolve('web');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
@@ -103,6 +105,8 @@ export const server = http.createServer(async (req, res) => {
       await checkpoints.capture('editor', relative);
       return json(res, 200, await invokeTool(workspace, 'write_file', args));
     }
+    if (url.pathname === '/api/ide/status' && req.method === 'GET') return json(res, 200, await ide.status());
+    if (url.pathname === '/api/ide/start' && req.method === 'POST') return json(res, 200, await ide.start());
     if (url.pathname === '/api/checkpoints' && req.method === 'GET') return json(res, 200, { entries: await checkpoints.list() });
     if (url.pathname === '/api/checkpoints/restore' && req.method === 'POST') {
       const input = await body(req);
