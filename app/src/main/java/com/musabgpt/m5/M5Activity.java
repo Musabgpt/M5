@@ -42,6 +42,7 @@ public final class M5Activity extends Activity {
     private final ArrayList<String> feed=new ArrayList<>();
     private TermuxBridge termux;
     private FreeModels models;
+    private PhoneTools phone;
     private NativeAgent agent;
     private boolean connected=false,agentActive=false;
     private String selectedFile="",originalHash=EMPTY_HASH;
@@ -57,7 +58,8 @@ public final class M5Activity extends Activity {
         getWindow().setNavigationBarColor(BG);
         termux=new TermuxBridge(this);
         models=new FreeModels(this);
-        agent=new NativeAgent(termux,models,new NativeAgent.Screen() {
+        phone=new PhoneTools(this);
+        agent=new NativeAgent(termux,models,phone,new NativeAgent.Screen() {
             @Override public void log(String text){runOnUiThread(()->addFeed(text));}
             @Override public void requestApproval(String title,String preview,NativeAgent.Decision callback) {
                 runOnUiThread(()->new AlertDialog.Builder(M5Activity.this)
@@ -123,7 +125,7 @@ public final class M5Activity extends Activity {
         HorizontalScrollView scroller=new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
         LinearLayout tabs=horizontal();
-        for(String name:new String[]{"Files","Agent","Terminal","Providers"}) {
+        for(String name:new String[]{"Files","Agent","Phone","Terminal","Providers"}) {
             Button b=button(name,()->showPanel(name.toLowerCase()));
             tabs.addView(b,new LinearLayout.LayoutParams(dp(98),dp(48)));
         }
@@ -164,6 +166,7 @@ public final class M5Activity extends Activity {
         switch(name){
             case "files":showFiles();break;
             case "agent":showAgent();break;
+            case "phone":showPhone();break;
             case "terminal":showTerminal();break;
             case "providers":showProviders();break;
             default:showFiles();
@@ -308,6 +311,38 @@ public final class M5Activity extends Activity {
                     });
                 }).show());
         }));
+    }
+    private void showPhone() {
+        caption("ANDROID PHONE CONTROL");
+        info("Launch installed apps directly, without any AI provider. Advanced screen controls require you to enable Accessibility.");
+        info("Accessibility enabled: "+phone.accessibilityReady());
+        body.addView(button("Open WhatsApp",()->{
+            try {
+                JSONObject result=phone.open("واتساب");
+                toast("Android launch: "+result.optString("package"));
+            }catch(Exception error){showError("Open app",error.getMessage());}
+        }));
+        body.addView(button("Enable Phone Controls in Android Settings",()->{
+            new AlertDialog.Builder(this).setTitle("Optional phone automation permission")
+                .setMessage("Android Accessibility can see visible labels, and can tap, type and scroll. M5 processes screen data only when you request an action; it must ask before sharing visible UI with an AI provider. Disable it anytime in Android Settings. Sideloaded apps on some Android versions may also require Allow restricted settings.")
+                .setNegativeButton("Cancel",null)
+                .setPositiveButton("Open Settings",(d,w)->phone.requestAccessibilitySettings())
+                .show();
+        }));
+        body.addView(button("Show installed launchable apps",()->{
+            try {
+                JSONObject result=phone.apps();
+                JSONArray apps=result.optJSONArray("apps");
+                StringBuilder names=new StringBuilder();
+                if(apps!=null)for(int i=0;i<apps.length()&&i<80;i++){
+                    JSONObject app=apps.optJSONObject(i);
+                    if(app!=null)names.append(app.optString("app")).append("\n");
+                }
+                new AlertDialog.Builder(this).setTitle("Launchable apps").setMessage(names.length()==0?"No launchable apps visible":names.toString())
+                    .setPositiveButton("OK",null).show();
+            }catch(Exception error){showError("Installed apps",error.getMessage());}
+        }));
+        info("Agent phone tools: phone_apps, phone_open, phone_observe, phone_click, phone_type, phone_scroll, phone_back and phone_home. Interactions require explicit consent. M5 cannot silently enable Accessibility or bypass other apps' security.");
     }
     private void showProviders(){
         caption("FREE AI PROVIDERS");
