@@ -58,12 +58,12 @@ public final class AgentProtocol {
                 else if(a instanceof String) arguments=new JSONObject((String)a);
                 else {
                     arguments=new JSONObject();
-                    for(String k:new String[]{"path","query","command","content","expectedHash","summary","app","id","text","direction","url","number","diff","port"}) {
+                    for(String k:new String[]{"path","query","command","workdir","yield_time_ms","content","expectedHash","summary","app","id","text","direction","url","number","diff","port"}) {
                         if(tool.has(k))arguments.put(k,tool.get(k));
                     }
                 }
             }
-            if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|audit_project|history_list|history_compare|history_restore|git_project_status|git_project_diff|git_project_init|apply_patch|browser_observe|git_status|git_diff|phone_apps|phone_open|phone_open_url|phone_dial|phone_sms_draft|phone_observe|phone_click|phone_type|phone_scroll|phone_back|phone_home|finish"))
+            if(!name.matches("list_files|read_file|search_code|write_file|run_command|check_file|run_file|audit_project|history_list|history_compare|history_restore|exec_command|read_output|terminate_process|git_project_status|git_project_diff|git_project_init|apply_patch|browser_observe|git_status|git_diff|phone_apps|phone_open|phone_open_url|phone_dial|phone_sms_draft|phone_observe|phone_click|phone_type|phone_scroll|phone_back|phone_home|finish"))
                 return new Result(null,"Unsupported model tool: "+name);
             JSONObject normalized=new JSONObject();
             normalized.put("name",name);
