@@ -12,7 +12,7 @@ This branch replaces the original WebView-based app with native Java Android scr
 1. Download M5-Native-debug-APK from a **successful** GitHub Android workflow artifact for PR #2.
 2. Install it alongside the older M5. This debug build uses the separate application ID com.musabgpt.m5.nativepreview.
 3. Ensure official Termux is installed, enable allow-external-apps=true in ~/.termux/termux.properties, and grant M5 Native Android's additional RUN_COMMAND permission.
-4. Launch M5 Native. The native UI appears immediately; tap ↻ Termux to connect once. The app installs a separate engine copy in ~/m5-native and preserves ~/m5-workspace project files.
+4. Launch M5 Native. The native UI appears immediately; tap ↻ Termux to connect once. The app installs its bundled tool script into ~/m5-native and preserves ~/m5-workspace project files. It does not clone GitHub or run a server. Node.js must be present in Termux (M5 may request Termux to install it if missing).
 5. Use Files, Agent, and Terminal in one native Android activity. No HTTP service is started.
 
 ## Features and limitations
