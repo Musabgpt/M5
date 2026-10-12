@@ -21,7 +21,7 @@ public final class FreeModels {
     private static final ExecutorService NETWORK=Executors.newSingleThreadExecutor();
     private final SharedPreferences prefs;
     private final SecureKeys keys;
-    private final long[] publicCooldownUntil=new long[4];
+    private final ProviderMesh mesh=new ProviderMesh(4);
     public interface Callback {
         void success(String text,String route);
         void error(String message);
@@ -87,20 +87,20 @@ public final class FreeModels {
                     }catch(Exception e){errors.append(FAMILIES[family]).append(": ").append(e.getMessage()).append("; ");}
                 }
                 int attempted=0;
-                for(int i=0;i<PUBLIC_ROUTES.length;i++){
-                    if(SystemClock.elapsedRealtime()<publicCooldownUntil[i])continue;
+                long now=SystemClock.elapsedRealtime();
+                for(int i:mesh.order(now)){
                     attempted++;
                     String[] route=PUBLIC_ROUTES[i];
+                    long started=SystemClock.elapsedRealtime();
                     try{
                         String text=request(route[1],route[2],messages,"");
+                        mesh.success(i,SystemClock.elapsedRealtime()-started);
                         callback.success(text,route[0]);return;
                     }catch(ProviderError e){
-                        // Honor rate limits instead of hammering dead or throttled free gateways.
-                        long cooldown=e.code==429?600_000:e.code==401||e.code==403||e.code==404?1_800_000:60_000;
-                        publicCooldownUntil[i]=SystemClock.elapsedRealtime()+cooldown;
+                        mesh.failure(i,e.code,SystemClock.elapsedRealtime());
                         errors.append(route[0]).append(": HTTP ").append(e.code).append("; ");
                     }catch(Exception e){
-                        publicCooldownUntil[i]=SystemClock.elapsedRealtime()+120_000;
+                        mesh.failure(i,0,SystemClock.elapsedRealtime());
                         errors.append(route[0]).append(": ").append(e.getClass().getSimpleName()).append("; ");
                     }
                 }
@@ -108,6 +108,19 @@ public final class FreeModels {
                 callback.error("Free providers unavailable. "+errors.substring(0,Math.min(420,errors.length())));
             }catch(Exception e){callback.error("Free provider failure: "+e.getMessage());}
         });
+    }
+    public synchronized String meshStatus(){
+        long now=SystemClock.elapsedRealtime();
+        StringBuilder sb=new StringBuilder("Free provider mesh (observed only)\n");
+        for(int i=0;i<PUBLIC_ROUTES.length;i++){
+            sb.append(PUBLIC_ROUTES[i][0]).append(": ")
+              .append(mesh.blockedFor(i,now)>0 ? "cooldown "+(mesh.blockedFor(i,now)/1000)+"s" : "eligible")
+              .append(" · success ").append(mesh.successes(i))
+              .append(" · failures ").append(mesh.failures(i))
+              .append(" · score ").append(String.format(java.util.Locale.ROOT,"%.1f",mesh.score(i)))
+              .append('\n');
+        }
+        return sb.toString();
     }
     private static final class ProviderError extends Exception {
         final int code;
