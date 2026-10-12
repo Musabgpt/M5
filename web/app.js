@@ -86,7 +86,7 @@ async function updateJob() {
   if (!state.jobId) return;
   const job = await api('/api/agent/' + state.jobId + '?after=' + state.lastIndex);
   for (const ev of job.events) { addEvent(ev); state.lastIndex = Math.max(state.lastIndex, ev.index); }
-  $('agent-status').textContent = job.status.toUpperCase() + ' · edits ' + job.evidence.writes + ' · checks ' + job.evidence.checks;
+  $('agent-status').textContent = (job.mode || 'agent').toUpperCase() + ' · ' + job.status.toUpperCase() + ' · edits ' + job.evidence.writes + ' · checks ' + job.evidence.checks;
   $('agent-stop').disabled = !['running','approval'].includes(job.status);
   if (job.pending) {
     state.approval = job.pending;
@@ -100,7 +100,7 @@ async function updateJob() {
 async function beginAgent(goal) {
   try {
     $('conversation').replaceChildren(); state.lastIndex = -1;
-    const data = await post('/api/agent/start', { goal, family: $('provider-family').value });
+    const data = await post('/api/agent/start', { goal, family: $('provider-family').value, mode: $('agent-mode').value });
     state.jobId = data.id;
     $('agent-prompt').value = '';
     $('agent-stop').disabled = false;
