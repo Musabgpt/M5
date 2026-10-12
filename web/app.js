@@ -151,9 +151,29 @@ async function secondary(name) {
     };
   } else if (name === 'search') {
     const input = element('input', { placeholder: 'Search text in project files' });
-    const button = element('button', {}, 'Search');
+    const button = element('button', {}, 'Find exact text');
+    const smart = element('button', {}, 'Find relevant code');
     const result = element('div');
-    const row = element('div', { className:'input-row' }); row.append(input, button); view.append(row, result);
+    const row = element('div', { className:'input-row' }); row.append(input, button, smart); view.append(row, result);
+    smart.onclick = async () => {
+      result.replaceChildren();
+      if (!input.value.trim()) { result.textContent = 'Enter a symbol or description to search'; return; }
+      try {
+        const data = await api('/api/context?q=' + encodeURIComponent(input.value));
+        for (const hit of data.results) {
+          const card = element('div', { className: 'card' });
+          const link = element('button', { className:'file-row' }, hit.path + ' · relevance ' + hit.score);
+          link.onclick = () => openFile(hit.path);
+          card.append(link);
+          for (const line of hit.snippets) {
+            const row = element('div', { className:'muted' }, 'L' + line.line + '  ' + line.text);
+            card.append(row);
+          }
+          result.append(card);
+        }
+        if (!data.results.length) result.textContent = 'No relevant code found in the indexed workspace';
+      } catch (e) { result.textContent = e.message; }
+    };
     button.onclick = async () => {
       result.replaceChildren();
       try { const data = await api('/api/search?q=' + encodeURIComponent(input.value));
