@@ -358,18 +358,54 @@ public final class M5Activity extends Activity {
     }
     private void showProviders(){
         caption("FREE AI PROVIDERS");
-        info("These models connect directly from the Android app over HTTPS. No M5 server is needed. Free quotas and availability may change.");
-        for(String family:FreeModels.FAMILIES)info("• "+family);
-        info("FreeLLMPool tries multiple public free routes. Other gateway families remain configurable via a remote HTTPS endpoint (no local proxy).");
+        info("Direct HTTPS. Public free gateways can be unavailable or rate-limited; optional free-plan keys are encrypted locally.");
+        ScrollView settings=new ScrollView(this);
+        LinearLayout items=vertical();
+        settings.addView(items);
+        body.addView(settings,new LinearLayout.LayoutParams(-1,0,1));
+        items.addView(label("FreeLLMPool: public endpoints, automatic cooldown after HTTP 429. No unlimited access.",13,MUTED));
         for(int i=1;i<FreeModels.FAMILIES.length;i++){
-            final int id=i;body.addView(label(FreeModels.FAMILIES[i],16,ACCENT));
+            final int id=i;
+            items.addView(label(FreeModels.FAMILIES[i],16,ACCENT));
             EditText url=input("HTTPS OpenAI-compatible /chat/completions URL",1);
-            url.setSingleLine(true);url.setText(models.getEndpoint(i));body.addView(url);
+            url.setSingleLine(true);
+            url.setText(models.getEndpoint(i));
+            url.setEnabled(i<4);
+            items.addView(url);
             EditText model=input("Model ID",1);
-            model.setSingleLine(true);model.setText(models.getModel(i));body.addView(model);
-            body.addView(button("Save "+FreeModels.FAMILIES[i],()->{
-                try{models.configure(id,url.getText().toString().trim(),model.getText().toString().trim());toast("Saved provider configuration");}
-                catch(Exception e){showError("Invalid gateway",e.getMessage());}
+            model.setSingleLine(true);
+            model.setText(models.getModel(i));
+            items.addView(model);
+            EditText key=input(models.hasKey(i)?"Encrypted key already saved · enter replacement":"Optional free-plan API key",1);
+            key.setSingleLine(true);
+            key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            items.addView(key);
+            LinearLayout commands=horizontal();
+            commands.addView(button("Save",()->{
+                try{
+                    models.configure(id,url.getText().toString().trim(),model.getText().toString().trim());
+                    String secret=key.getText().toString().trim();
+                    if(!secret.isEmpty()){models.configureKey(id,secret);key.setText("");}
+                    toast("Provider settings saved locally");
+                }catch(Exception error){showError("Provider setup failed",error.getMessage());}
+            }),new LinearLayout.LayoutParams(0,dp(48),1));
+            commands.addView(button("Forget key",()->{
+                try{models.configureKey(id,"");key.setText("");toast("Saved API key erased");}
+                catch(Exception error){showError("Keystore",error.getMessage());}
+            }),new LinearLayout.LayoutParams(0,dp(48),1));
+            items.addView(commands);
+            items.addView(button("Test this provider (uses free quota)",()->{
+                JSONArray message=new JSONArray();
+                try{message.put(new JSONObject().put("role","user").put("content","Reply with exactly OK."));}
+                catch(Exception ignored){}
+                models.complete(message,id,new FreeModels.Callback(){
+                    @Override public void success(String answer,String route){
+                        runOnUiThread(()->showError("Provider response",route+": "+answer.substring(0,Math.min(350,answer.length()))));
+                    }
+                    @Override public void error(String message){
+                        runOnUiThread(()->showError("Provider unavailable",message));
+                    }
+                });
             }));
         }
     }
