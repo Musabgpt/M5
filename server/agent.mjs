@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import { TOOL_SPECS, validateCall, invokeTool } from './tools.mjs';
 import { chatCompletion } from './providers.mjs';
 
+const ACTION_RE = /\b(?:create|build|implement|edit|fix|test|run|modify|refactor|write|install|deploy|delete|update|generate)\b|اكتب|عدّل|عدل|أنشئ|انشئ|ابن|طوّر|طور|اصلح|صلح|نفّذ|نفذ|اختبر|ابني/i;
+
 const SYSTEM = [
   'You are M5, a real coding agent with bounded tools in a local workspace.',
   'Tools schema: ' + JSON.stringify(TOOL_SPECS),
@@ -94,8 +96,9 @@ export class AgentManager {
       catch (e) { job.status = 'blocked'; this.emit(job, 'error', 'Invalid model tool call: ' + e.message); return; }
       if (!calls.length) {
         this.emit(job, 'answer', (response.content || '').slice(0, 12000));
-        job.status = job.evidence.writes && !job.evidence.checks ? 'blocked' : 'completed';
-        if (job.status === 'blocked') this.emit(job, 'warning', 'Files changed without successful verification');
+        const noEvidence = ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks;
+        job.status = (job.evidence.writes && !job.evidence.checks) || noEvidence ? 'blocked' : 'completed';
+        if (job.status === 'blocked') this.emit(job, 'warning', 'No verifiable project action, or files changed without a successful check');
         return;
       }
       messages.push({ role: 'assistant', content: JSON.stringify({ tool_calls: calls }) });
@@ -135,8 +138,8 @@ export class AgentManager {
         }
         messages.push({ role: 'user', content: 'OBSERVED result for ' + call.name + ': ' + JSON.stringify(result).slice(0, 14000) });
         if (call.name === 'finish') {
-          if (job.evidence.writes && !job.evidence.checks) {
-            job.status = 'blocked'; this.emit(job, 'warning', 'No successful check after file writes');
+          if ((job.evidence.writes && !job.evidence.checks) || (ACTION_RE.test(job.goal) && !job.evidence.writes && !job.evidence.checks)) {
+            job.status = 'blocked'; this.emit(job, 'warning', 'No verified project action or successful check');
           } else {
             job.status = 'completed'; this.emit(job, 'answer', result.summary);
           }
