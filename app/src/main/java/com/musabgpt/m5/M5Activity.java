@@ -291,34 +291,39 @@ public final class M5Activity extends Activity {
     }
     private void sourceAction(boolean execute){
         if(selectedFile.isEmpty()||editor==null)return;
-        String text=editor.getText().toString();
-        if(originalHash.isEmpty()||!text.equals(lastSavedContent)){
+        final String path=editorFile;
+        final String savedHash=originalHash;
+        final String currentText=editor.getText().toString();
+        if(savedHash.isEmpty()||!currentText.equals(lastSavedContent)){
             showError("Save before "+(execute?"running":"checking"),
-                "There are unsaved changes. Save this file first; the tool must check the exact version on disk.");
+                "There are unsaved changes. Save first to avoid checking stale source.");
             return;
         }
         requireTermux(()->{
-            Runnable job=()->termux.tool(execute?"run_file":"check_file",
-                new String[]{selectedFile},new TermuxBridge.Callback(){
-                @Override public void finished(JSONObject observed){
-                    boolean success=observed.optBoolean("success",false);
-                    String title=(execute?"Run":"Syntax check")+(success?" ✓":" — failed");
-                    String output="File: "+observed.optString("file",selectedFile)+
-                        "\nExit code: "+observed.optString("exitCode","unknown")+
-                        "\nTimed out: "+observed.optBoolean("timedOut")+
-                        "\n\n"+observed.optString("stdout","")+
-                        "\n"+observed.optString("stderr","");
-                    if(output.length()>6000)output=output.substring(0,6000)+"\n[Output clipped]";
-                    new AlertDialog.Builder(M5Activity.this)
-                        .setTitle(title).setMessage(output)
-                        .setPositiveButton("OK",null).show();
+            Runnable job=()->{
+                if(!path.equals(editorFile)||!savedHash.equals(originalHash)){
+                    showError("Execution cancelled","The open file changed after you requested this action.");
+                    return;
                 }
-                @Override public void failed(String error){showError("Execution not started",error);}
-            });
+                termux.tool(execute?"run_file":"check_file",
+                    new String[]{path,savedHash},new TermuxBridge.Callback(){
+                    @Override public void finished(JSONObject observed){
+                        boolean success=observed.optBoolean("success",false);
+                        String title=(execute?"Run":"Syntax check")+(success?" ✓":" — failed");
+                        String output="File: "+observed.optString("file",path)+
+                            "\nExit code: "+observed.optString("exitCode","unknown")+
+                            "\nTimed out: "+observed.optBoolean("timedOut")+
+                            "\n\n"+observed.optString("stdout","")+"\n"+observed.optString("stderr","");
+                        if(output.length()>6000)output=output.substring(0,6000)+"\n[Output clipped]";
+                        new AlertDialog.Builder(M5Activity.this).setTitle(title)
+                            .setMessage(output).setPositiveButton("OK",null).show();
+                    }
+                    @Override public void failed(String error){showError("Execution not started",error);}
+                });
+            };
             if(!execute){job.run();return;}
-            new AlertDialog.Builder(this).setTitle("Run this source file?")
-                .setMessage("Run "+selectedFile+" with your Termux permissions?\n\n"
-                +"Source files can access the network and your Termux data. Run only trusted code.")
+            new AlertDialog.Builder(this).setTitle("Run "+path+"?")
+                .setMessage("This source will run with your Termux user's permissions. M5 checks that the file hash still matches the approved version. Only run trusted code.")
                 .setNegativeButton("Cancel",null)
                 .setPositiveButton("Run once",(d,w)->job.run()).show();
         });
