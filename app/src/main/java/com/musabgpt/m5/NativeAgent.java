@@ -92,7 +92,7 @@ public final class NativeAgent {
             }
             return;
         }
-        if("agent".equals(mode) && requiresAction && !termux.isConnected() && !phone.accessibilityReady() && !phoneRequest(goal)) {
+        if("agent".equals(mode) && !termux.isConnected() && (requiresWrite || requiresAction && !phone.accessibilityReady() && !phoneRequest(goal))) {
             ui.log("Coding tools are offline. Connect Termux from the top bar before running project tasks.");
             close("Blocked: Termux is not connected. No model request or tool execution was made.");
             return;
